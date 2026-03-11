@@ -3,10 +3,16 @@ module Tripswitch.ClientSpec (spec) where
 import Control.Concurrent.STM (atomically, modifyTVar', tryReadTBQueue, writeTVar)
 import Control.Exception (Exception (..), SomeException, throwIO, try)
 import qualified Data.Map.Strict as Map
-import Data.Text (Text)
+import Data.List (uncons)
+import Data.Maybe (fromJust)
 import Test.Hspec
 
 import Tripswitch.Client
+
+-- | Safe-ish head that satisfies -Wx-partial (GHC 9.8+).
+-- Only used in tests where we've already asserted length.
+first :: [a] -> a
+first = fst . fromJust . uncons
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -167,10 +173,10 @@ spec = do
         } (pure (42 :: Int))
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reMetric (head entries) `shouldBe` "latency"
-      reRouterID (head entries) `shouldBe` "rtr-1"
-      reOK (head entries) `shouldBe` True
-      reValue (head entries) `shouldSatisfy` (>= 0)
+      reMetric (first entries) `shouldBe` "latency"
+      reRouterID (first entries) `shouldBe` "rtr-1"
+      reOK (first entries) `shouldBe` True
+      reValue (first entries) `shouldSatisfy` (>= 0)
       closeClient client
 
     it "emits multiple metrics" $ do
@@ -213,7 +219,7 @@ spec = do
         } (pure (1 :: Int))
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reValue (head entries) `shouldBe` 42.0
+      reValue (first entries) `shouldBe` 42.0
       closeClient client
 
     it "recovers from panicking metric closure" $ do
@@ -227,7 +233,7 @@ spec = do
         } (pure (1 :: Int))
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reMetric (head entries) `shouldBe` "safe"
+      reMetric (first entries) `shouldBe` "safe"
       closeClient client
 
     it "metrics without router warns but succeeds" $ do
@@ -249,8 +255,8 @@ spec = do
       result `shouldBe` Right "success"
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reRouterID (head entries) `shouldBe` "metrics-router"
-      reMetric (head entries) `shouldBe` "latency"
+      reRouterID (first entries) `shouldBe` "metrics-router"
+      reMetric (first entries) `shouldBe` "latency"
       closeClient client
 
     it "gating only, no metrics emitted" $ do
@@ -271,7 +277,7 @@ spec = do
         , ecMetrics = Map.singleton "m" (MetricLiteral 1.0)
         } (pure (1 :: Int))
       entries <- drainQueue client
-      reRouterID (head entries) `shouldBe` "custom-router"
+      reRouterID (first entries) `shouldBe` "custom-router"
       closeClient client
 
   describe "Execute — deferred metrics" $ do
@@ -281,7 +287,7 @@ spec = do
         { ecRouterID = "rtr-1"
         , ecMetrics = Map.singleton "latency" MetricLatency
         }
-        (\(val :: Int) _mExc ->
+        (\(_mVal :: Maybe Int) _mExc ->
             pure $ Map.fromList
               [ ("prompt_tokens", 100.0)
               , ("completion_tokens", 200.0)
@@ -302,7 +308,7 @@ spec = do
       _ <- try @SomeException $ executeWithDeferred client defaultExecConfig
         { ecRouterID = "rtr-1"
         }
-        (\(_val :: Int) _mExc -> pure Map.empty)
+        (\(_mVal :: Maybe Int) _mExc -> pure Map.empty)
         (throwIO TestException)
       entries <- drainQueue client
       length entries `shouldBe` 0
@@ -314,12 +320,12 @@ spec = do
         { ecRouterID = "rtr-1"
         , ecMetrics = Map.singleton "count" (MetricLiteral 1.0)
         }
-        (\(_val :: String) _mExc ->
+        (\(_mVal :: Maybe String) _mExc ->
             error "boom" :: IO (Map.Map Text Double))
         (pure "ok")
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reMetric (head entries) `shouldBe` "count"
+      reMetric (first entries) `shouldBe` "count"
       closeClient client
 
   describe "Execute — tags" $ do
@@ -331,7 +337,7 @@ spec = do
         , ecTags = Map.fromList [("endpoint", "/api"), ("shared", "local")]
         } (pure (1 :: Int))
       entries <- drainQueue client
-      let tags = reTags (head entries)
+      let tags = reTags (first entries)
       Map.lookup "env" tags `shouldBe` Just "prod"
       Map.lookup "endpoint" tags `shouldBe` Just "/api"
       Map.lookup "shared" tags `shouldBe` Just "local"
@@ -345,7 +351,7 @@ spec = do
         , ecTags = Map.fromList [("endpoint", "/checkout"), ("method", "POST")]
         } (pure ("ok" :: String))
       entries <- drainQueue client
-      let tags = reTags (head entries)
+      let tags = reTags (first entries)
       Map.lookup "endpoint" tags `shouldBe` Just "/checkout"
       Map.lookup "method" tags `shouldBe` Just "POST"
       closeClient client
@@ -376,7 +382,7 @@ spec = do
         , ecTraceID = "trace-123"
         } (pure (1 :: Int))
       entries <- drainQueue client
-      reTraceID (head entries) `shouldBe` "trace-123"
+      reTraceID (first entries) `shouldBe` "trace-123"
       closeClient client
 
     it "uses trace extractor" $ do
@@ -386,7 +392,7 @@ spec = do
         , ecMetrics = Map.singleton "m" (MetricLiteral 1.0)
         } (pure (1 :: Int))
       entries <- drainQueue client
-      reTraceID (head entries) `shouldBe` "extracted-456"
+      reTraceID (first entries) `shouldBe` "extracted-456"
       closeClient client
 
     it "explicit trace ID overrides extractor" $ do
@@ -397,7 +403,7 @@ spec = do
         , ecTraceID = "explicit"
         } (pure (1 :: Int))
       entries <- drainQueue client
-      reTraceID (head entries) `shouldBe` "explicit"
+      reTraceID (first entries) `shouldBe` "explicit"
       closeClient client
 
   describe "Execute — error evaluation" $ do
@@ -409,7 +415,7 @@ spec = do
         } (throwIO TestException)
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reOK (head entries) `shouldBe` False
+      reOK (first entries) `shouldBe` False
       closeClient client
 
     it "ignored error produces ok=true" $ do
@@ -420,7 +426,7 @@ spec = do
         , ecIgnoreErrors = [\e -> show e == show TestException]
         } (throwIO TestException)
       entries <- drainQueue client
-      reOK (head entries) `shouldBe` True
+      reOK (first entries) `shouldBe` True
       closeClient client
 
     it "non-ignored error produces ok=false" $ do
@@ -431,7 +437,7 @@ spec = do
         , ecIgnoreErrors = [\e -> show e == show IgnoredException]
         } (throwIO TestException)
       entries <- drainQueue client
-      reOK (head entries) `shouldBe` False
+      reOK (first entries) `shouldBe` False
       closeClient client
 
     it "error evaluator takes precedence over ignore list" $ do
@@ -443,7 +449,7 @@ spec = do
         , ecErrorEvaluator = Just (const True)
         } (throwIO TestException)
       entries <- drainQueue client
-      reOK (head entries) `shouldBe` False
+      reOK (first entries) `shouldBe` False
       closeClient client
 
     it "error evaluator returning false means ok=true" $ do
@@ -454,7 +460,7 @@ spec = do
         , ecErrorEvaluator = Just (const False)
         } (throwIO TestException)
       entries <- drainQueue client
-      reOK (head entries) `shouldBe` True
+      reOK (first entries) `shouldBe` True
       closeClient client
 
     it "nil error is not a failure" $ do
@@ -464,7 +470,7 @@ spec = do
         , ecMetrics = Map.singleton "m" (MetricLiteral 1.0)
         } (pure (1 :: Int))
       entries <- drainQueue client
-      reOK (head entries) `shouldBe` True
+      reOK (first entries) `shouldBe` True
       closeClient client
 
   describe "Execute — selectors" $ do
@@ -550,7 +556,7 @@ spec = do
         } (pure ("ok" :: String))
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reRouterID (head entries) `shouldBe` "r1"
+      reRouterID (first entries) `shouldBe` "r1"
       closeClient client
 
     it "breaker selector empty selection = no gating" $ do
@@ -611,12 +617,12 @@ spec = do
         }
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reRouterID (head entries) `shouldBe` "rtr-1"
-      reMetric (head entries) `shouldBe` "latency"
-      reValue (head entries) `shouldBe` 42.0
-      reOK (head entries) `shouldBe` True
-      reTraceID (head entries) `shouldBe` "trace-1"
-      Map.lookup "k" (reTags (head entries)) `shouldBe` Just "v"
+      reRouterID (first entries) `shouldBe` "rtr-1"
+      reMetric (first entries) `shouldBe` "latency"
+      reValue (first entries) `shouldBe` 42.0
+      reOK (first entries) `shouldBe` True
+      reTraceID (first entries) `shouldBe` "trace-1"
+      Map.lookup "k" (reTags (first entries)) `shouldBe` Just "v"
       closeClient client
 
     it "merges global tags in report" $ do
@@ -630,7 +636,7 @@ spec = do
         , riTags = Map.fromList [("local", "yes")]
         }
       entries <- drainQueue client
-      let tags = reTags (head entries)
+      let tags = reTags (first entries)
       Map.lookup "env" tags `shouldBe` Just "prod"
       Map.lookup "local" tags `shouldBe` Just "yes"
       closeClient client
@@ -675,7 +681,7 @@ spec = do
         }
       entries <- drainQueue client
       length entries `shouldBe` 1
-      reMetric (head entries) `shouldBe` "count"
+      reMetric (first entries) `shouldBe` "count"
       closeClient client
 
   describe "State queries" $ do

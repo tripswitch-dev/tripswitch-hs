@@ -203,14 +203,17 @@ let cfg = defaultConfig
 |-------|------|---------|-------------|
 | `cfgProjectID` | `Text` | `""` | Project ID |
 | `cfgApiKey` | `Text` | `""` | Project key (`eb_pk_`) for SSE auth |
-| `cfgIngestSecret` | `ByteString` | `""` | Ingest secret (`ik_`) for HMAC signing |
+| `cfgIngestSecret` | `Text` | `""` | Ingest secret (`ik_`) for HMAC signing |
 | `cfgBaseURL` | `Text` | `"https://api.tripswitch.dev"` | API endpoint |
 | `cfgFailOpen` | `Bool` | `True` | Allow traffic when Tripswitch is unreachable |
 | `cfgLogger` | `Logger` | `defaultLogger` | Custom logger |
 | `cfgGlobalTags` | `Map Text Text` | `mempty` | Tags applied to all samples |
 | `cfgTraceExtractor` | `Maybe (IO Text)` | `Nothing` | Extract trace ID for each sample |
 | `cfgOnStateChange` | `Maybe (Text -> BreakerState -> BreakerState -> IO ())` | `Nothing` | Callback on breaker state transitions |
-| `cfgMetaSyncInterval` | `Maybe Int` | `Just 30` | Metadata sync interval (seconds). `Nothing` to disable |
+| `cfgMetaSyncInterval` | `Int` | `30` | Metadata sync interval (seconds) |
+| `cfgSSEDisabled` | `Bool` | `False` | Disable SSE connection (testing) |
+| `cfgFlusherDisabled` | `Bool` | `False` | Disable report flusher (testing) |
+| `cfgMetaSyncDisabled` | `Bool` | `False` | Disable metadata sync (testing) |
 
 ### Execute Configuration
 
@@ -294,7 +297,7 @@ report client ReportInput
 
 ```haskell
 getState     :: Client -> Text -> IO (Maybe BreakerStatus)
-getAllStates  :: Client -> IO (Map Text BreakerStatus)
+getAllStates  :: Client -> IO [BreakerStatus]
 ```
 
 Read the local breaker cache for debugging, logging, and health checks. Returns copies — safe to hold without affecting internal state. For gating traffic, use `execute` with `ecBreakers`.
@@ -355,7 +358,7 @@ result <- executeWithDeferred client defaultExecConfig
   , ecRouterID = "llm-router"
   , ecMetrics  = Map.singleton "latency" MetricLatency
   }
-  (\response _mExc -> case response of
+  (\mResponse _mExc -> case mResponse of
       Nothing  -> pure Map.empty
       Just res -> pure $ Map.fromList
         [ ("prompt_tokens",     fromIntegral $ promptTokens res)
@@ -416,8 +419,8 @@ execute client defaultExecConfig
 Access the metadata cache directly:
 
 ```haskell
-getBreakersMetadata :: Client -> IO [BreakerMeta]
-getRoutersMetadata  :: Client -> IO [RouterMeta]
+getBreakersMetadata :: Client -> IO (Maybe [BreakerMeta])
+getRoutersMetadata  :: Client -> IO (Maybe [RouterMeta])
 ```
 
 ## Circuit Breaker States
@@ -454,11 +457,11 @@ main = do
   ac <- newAdminClient cfg
 
   -- List all projects
-  projects <- listProjects ac defaultRequestConfig
+  projects <- listProjects ac
 
   -- Create a project
   project <- createProject ac
-    (object ["name" .= ("prod-payments" :: Text)]) defaultRequestConfig
+    (object ["name" .= ("prod-payments" :: Text)])
 
   -- Create a breaker
   breaker <- createBreaker ac (projID project)
@@ -468,15 +471,15 @@ main = do
       , "kind"      .= ("p95" :: Text)
       , "op"        .= ("gt" :: Text)
       , "threshold" .= (500 :: Int)
-      ]) defaultRequestConfig
+      ])
 ```
 
 ### Request Configuration
 
-Configure individual admin requests with `defaultRequestConfig`:
+For custom headers, idempotency keys, or request IDs, use `WithConfig` variants:
 
 ```haskell
-createProject ac body defaultRequestConfig
+createProjectWithConfig ac body defaultRequestConfig
   { rcIdempotencyKey = Just "unique-key-123"
   , rcRequestID      = Just "req-456"
   , rcExtraHeaders   = Map.singleton "X-Custom" "value"
@@ -500,7 +503,7 @@ isServerFault, isTransport              :: APIError -> Bool
 ```
 
 ```haskell
-result <- try @APIError $ getProject ac "nonexistent" defaultRequestConfig
+result <- try @APIError $ getProject ac "nonexistent"
 case result of
   Left err | isNotFound err -> putStrLn "Project not found"
   Left err                  -> throwIO err

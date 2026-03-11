@@ -34,6 +34,9 @@ module Tripswitch.Admin.Types
     -- * Project Key
   , ProjectKey (..)
 
+    -- * Status
+  , Status (..)
+
     -- * Pagination
   , Pager (..)
   , ListParams (..)
@@ -44,16 +47,14 @@ import Data.Aeson
   ( FromJSON (..)
   , ToJSON (..)
   , Value (..)
-  , object
   , withObject
   , withText
   , (.:)
   , (.:?)
-  , (.=)
+  , (.!=)
   )
 import Data.Int (Int64)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -372,6 +373,25 @@ instance FromJSON ProjectKey where
       <*> v .:? "inserted_at"
 
 -- ---------------------------------------------------------------------------
+-- Status
+-- ---------------------------------------------------------------------------
+
+-- | Project status summary.
+data Status = Status
+  { stOpenCount :: !Int
+  , stClosedCount :: !Int
+  , stLastEvalMs :: !Int64
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Status where
+  parseJSON = withObject "Status" $ \v ->
+    Status
+      <$> v .: "open_count"
+      <*> v .: "closed_count"
+      <*> v .: "last_eval_ms"
+
+-- ---------------------------------------------------------------------------
 -- Pagination
 -- ---------------------------------------------------------------------------
 
@@ -393,3 +413,10 @@ data Pager a = Pager
   , pagerHasMore :: !Bool
   }
   deriving stock (Eq, Show)
+
+instance (FromJSON a) => FromJSON (Pager a) where
+  parseJSON = withObject "Pager" $ \v ->
+    Pager
+      <$> v .: "items"
+      <*> v .:? "cursor"
+      <*> v .:? "has_more" .!= False

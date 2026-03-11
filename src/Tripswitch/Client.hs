@@ -31,6 +31,7 @@ module Tripswitch.Client
     -- * Report
   , report
   , ReportInput (..)
+  , defaultReportInput
 
     -- * Breaker State
   , BreakerState (..)
@@ -47,8 +48,7 @@ module Tripswitch.Client
   , getBreakersMetadata
   , getRoutersMetadata
 
-    -- * Status & Stats
-  , Status (..)
+    -- * Stats
   , SDKStats (..)
   , getStats
 
@@ -264,20 +264,6 @@ instance FromJSON RoutersMetadataResponse where
 -- Status & Stats
 -- ---------------------------------------------------------------------------
 
-data Status = Status
-  { stOpenCount :: !Int
-  , stClosedCount :: !Int
-  , stLastEvalMs :: !Int64
-  }
-  deriving stock (Eq, Show)
-
-instance FromJSON Status where
-  parseJSON = withObject "Status" $ \v ->
-    Status
-      <$> v .: "open_count"
-      <*> v .: "closed_count"
-      <*> v .: "last_eval_ms"
-
 data SDKStats = SDKStats
   { ssDroppedSamples :: !Word64
   , ssBufferSize :: !Int
@@ -404,6 +390,18 @@ data ReportInput = ReportInput
   }
   deriving stock (Eq, Show)
 
+-- | Default report input with all fields empty/zero.
+defaultReportInput :: ReportInput
+defaultReportInput =
+  ReportInput
+    { riRouterID = ""
+    , riMetric = ""
+    , riValue = 0
+    , riOK = True
+    , riTraceID = ""
+    , riTags = Map.empty
+    }
+
 -- ---------------------------------------------------------------------------
 -- Client (opaque)
 -- ---------------------------------------------------------------------------
@@ -433,9 +431,19 @@ data Client = Client
 -- Client Lifecycle
 -- ---------------------------------------------------------------------------
 
+-- | Create a client with 'bracket' to guarantee cleanup.
+--
+-- __Note:__ This version does not start background threads (SSE, flusher,
+-- metadata sync). For a batteries-included client, use @Tripswitch.'Tripswitch.withClient'@
+-- from the "Tripswitch" module instead.
 withClient :: ClientConfig -> (Client -> IO a) -> IO a
 withClient cfg = bracket (newClient cfg) closeClient
 
+-- | Allocate a new client. Does not start background threads.
+--
+-- For production use, prefer @Tripswitch.'Tripswitch.newClient'@ from the
+-- "Tripswitch" module, which starts SSE, flusher, and metadata sync threads
+-- and blocks until the initial SSE sync completes (5 s timeout).
 newClient :: ClientConfig -> IO Client
 newClient cfg = do
   states <- newTVarIO Map.empty
@@ -520,7 +528,7 @@ execute_ client cfg task = do
 executeWithDeferred
   :: Client
   -> ExecConfig
-  -> (a -> Maybe SomeException -> IO (Map Text Double))
+  -> (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> IO a
   -> IO (Either TripSwitchError a)
 executeWithDeferred client cfg deferredFn task =
@@ -530,7 +538,7 @@ executeWithDeferred client cfg deferredFn task =
 executeInternal
   :: Client
   -> ExecConfig
-  -> Maybe (a -> Maybe SomeException -> IO (Map Text Double))
+  -> Maybe (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> IO a
   -> IO (Either TripSwitchError a)
 executeInternal client cfg mDeferredFn task = do
@@ -713,7 +721,7 @@ resolveTraceID client cfg
 emitMetrics
   :: Client
   -> ExecConfig
-  -> Maybe (a -> Maybe SomeException -> IO (Map Text Double))
+  -> Maybe (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> Double
   -> Bool
   -> Text
@@ -747,8 +755,8 @@ emitMetrics client cfg mDeferredFn durationMs isOK traceId taskResult = do
       Nothing -> pure ()
       Just deferredFn -> do
         mDeferred <- case taskResult of
-          Right val -> trySafe $ deferredFn val Nothing
-          Left exc -> trySafe $ deferredFn (error "task failed") (Just exc)
+          Right val -> trySafe $ deferredFn (Just val) Nothing
+          Left exc -> trySafe $ deferredFn Nothing (Just exc)
         case mDeferred of
           Nothing -> logWarn lg "deferred metrics function threw exception"
           Just deferredMap ->

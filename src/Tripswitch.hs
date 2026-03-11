@@ -46,6 +46,7 @@ module Tripswitch
     -- * Report
   , report
   , ReportInput (..)
+  , defaultReportInput
 
     -- * Breaker State
   , BreakerState (..)
@@ -75,4 +76,20 @@ module Tripswitch
   , nullLogger
   ) where
 
-import Tripswitch.Client
+import Control.Exception (bracket)
+
+import Tripswitch.Client hiding (newClient, withClient)
+import qualified Tripswitch.Client as C
+import Tripswitch.Client.Internal (startBackgroundThreads)
+
+-- | Create a new client, start background threads (SSE, flusher, metadata sync),
+-- and block until SSE is ready (5s timeout). This is the recommended constructor.
+newClient :: ClientConfig -> IO Client
+newClient cfg = do
+  client <- C.newClient cfg
+  startBackgroundThreads client
+  pure client
+
+-- | Create a client with 'bracket' to guarantee cleanup.
+withClient :: ClientConfig -> (Client -> IO a) -> IO a
+withClient cfg = bracket (newClient cfg) closeClient

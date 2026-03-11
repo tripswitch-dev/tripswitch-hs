@@ -7,10 +7,12 @@ import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Exception (SomeException, try)
 import Data.Aeson (Value (..), object, (.=))
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as LBS
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Network.HTTP.Types (status200, status201, status204, status400, status401, status403, status404, status409, status422, status429, status500)
-import Network.Wai (Application, requestHeaders, responseLBS)
+import Network.Wai (Application, getRequestBodyChunk, requestHeaders, responseLBS)
 import qualified Network.Wai.Handler.Warp as Warp
 import Test.Hspec
 
@@ -70,7 +72,7 @@ spec = do
             , "enable_signed_ingest" .= False
             ]
       result <- withMockServer (jsonApp 200 mockProject) $ \ac ->
-        getProject ac "proj_1" defaultRequestConfig
+        getProject ac "proj_1"
       projID result `shouldBe` "proj_1"
       projName result `shouldBe` "My Project"
 
@@ -81,17 +83,20 @@ spec = do
             , "enable_signed_ingest" .= False
             ]
       result <- withMockServer (jsonApp 200 mockProject) $ \ac ->
-        createProject ac (object ["name" .= ("New Project" :: Text)]) defaultRequestConfig
+        createProject ac (object ["name" .= ("New Project" :: Text)])
       projName result `shouldBe` "New Project"
 
-    it "listProjects returns projects" $ do
-      let mockProjects = Aeson.toJSON
-            [ object ["id" .= ("p1" :: Text), "name" .= ("P1" :: Text), "enable_signed_ingest" .= False]
-            , object ["id" .= ("p2" :: Text), "name" .= ("P2" :: Text), "enable_signed_ingest" .= True]
+    it "listProjects returns projects in pager" $ do
+      let mockPager = object
+            [ "items" .= [ object ["id" .= ("p1" :: Text), "name" .= ("P1" :: Text), "enable_signed_ingest" .= False]
+                         , object ["id" .= ("p2" :: Text), "name" .= ("P2" :: Text), "enable_signed_ingest" .= True]
+                         ]
+            , "has_more" .= False
             ]
-      result <- withMockServer (jsonApp 200 mockProjects) $ \ac ->
-        listProjects ac defaultRequestConfig
-      length result `shouldBe` 2
+      result <- withMockServer (jsonApp 200 mockPager) $ \ac ->
+        listProjects ac
+      length (pagerItems result) `shouldBe` 2
+      pagerHasMore result `shouldBe` False
 
   -- =======================================================================
   -- Breakers
@@ -115,7 +120,7 @@ spec = do
             , "metadata" .= object []
             ]
       result <- withMockServer (jsonApp 200 mockBreaker) $ \ac ->
-        createBreaker ac "proj_1" (object ["name" .= ("error-rate" :: Text)]) defaultRequestConfig
+        createBreaker ac "proj_1" (object ["name" .= ("error-rate" :: Text)])
       brkName result `shouldBe` "error-rate"
       brkKind result `shouldBe` ErrorRate
       brkOp result `shouldBe` OpGT
@@ -123,7 +128,7 @@ spec = do
     it "deleteBreaker succeeds on 204" $ do
       result <- try @SomeException $
         withMockServer (\_ respond -> respond $ responseLBS status204 [] "") $ \ac ->
-          deleteBreaker ac "proj_1" "brk_1" defaultRequestConfig
+          deleteBreaker ac "proj_1" "brk_1"
       case result of
         Left _ -> pure () -- 204 with empty body may cause parse error, that's ok for now
         Right _ -> pure ()
@@ -142,7 +147,7 @@ spec = do
             , "metadata" .= object []
             ]
       result <- withMockServer (jsonApp 200 mockRouter) $ \ac ->
-        createRouter ac "proj_1" (object ["name" .= ("main" :: Text)]) defaultRequestConfig
+        createRouter ac "proj_1" (object ["name" .= ("main" :: Text)])
       rtrName result `shouldBe` "main"
       rtrMode result `shouldBe` Static
 
@@ -154,7 +159,7 @@ spec = do
       let errBody = object ["message" .= ("not found" :: Text), "code" .= ("not_found" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 404 errBody) $ \ac ->
-          getProject ac "nonexistent" defaultRequestConfig
+          getProject ac "nonexistent"
       case result of
         Left err -> do
           isNotFound err `shouldBe` True
@@ -165,7 +170,7 @@ spec = do
       let errBody = object ["message" .= ("unauthorized" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 401 errBody) $ \ac ->
-          getProject ac "p1" defaultRequestConfig
+          getProject ac "p1"
       case result of
         Left err -> isUnauthorized err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -174,7 +179,7 @@ spec = do
       let errBody = object ["message" .= ("forbidden" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 403 errBody) $ \ac ->
-          getProject ac "p1" defaultRequestConfig
+          getProject ac "p1"
       case result of
         Left err -> isForbidden err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -183,7 +188,7 @@ spec = do
       let errBody = object ["message" .= ("conflict" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 409 errBody) $ \ac ->
-          createProject ac (object []) defaultRequestConfig
+          createProject ac (object [])
       case result of
         Left err -> isConflict err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -192,7 +197,7 @@ spec = do
       let errBody = object ["message" .= ("invalid" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 422 errBody) $ \ac ->
-          createProject ac (object []) defaultRequestConfig
+          createProject ac (object [])
       case result of
         Left err -> isValidation err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -201,7 +206,7 @@ spec = do
       let errBody = object ["message" .= ("rate limited" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 429 errBody) $ \ac ->
-          getProject ac "p1" defaultRequestConfig
+          getProject ac "p1"
       case result of
         Left err -> isRateLimited err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -210,7 +215,7 @@ spec = do
       let errBody = object ["message" .= ("internal error" :: Text)]
       result <- try @APIError $
         withMockServer (jsonApp 500 errBody) $ \ac ->
-          getProject ac "p1" defaultRequestConfig
+          getProject ac "p1"
       case result of
         Left err -> isServerFault err `shouldBe` True
         Right _ -> expectationFailure "expected APIError"
@@ -221,7 +226,7 @@ spec = do
             , acBaseURL = "http://localhost:1"  -- unreachable
             }
       ac <- newAdminClient cfg
-      result <- try @APIError $ getProject ac "p1" defaultRequestConfig
+      result <- try @APIError $ getProject ac "p1"
       case result of
         Left err -> isTransport err `shouldBe` True
         Right _ -> expectationFailure "expected transport error"
@@ -240,7 +245,7 @@ spec = do
               _ ->
                 respond $ responseLBS status401 [] "{\"message\":\"bad auth\"}"
       result <- withMockServer app $ \ac ->
-        getProject ac "p1" defaultRequestConfig
+        getProject ac "p1"
       projID result `shouldBe` "p1"
 
   -- =======================================================================
@@ -315,3 +320,65 @@ spec = do
     it "NotificationEventType parses all values" $ do
       Aeson.eitherDecode "\"trip\"" `shouldBe` Right Trip
       Aeson.eitherDecode "\"recover\"" `shouldBe` Right Recover
+
+  -- =======================================================================
+  -- Bug fixes
+  -- =======================================================================
+  describe "parseAPIError extracts message from JSON" $ do
+    it "aeMessage contains the JSON message field" $ do
+      let errBody = object ["message" .= ("not found" :: Text), "code" .= ("not_found" :: Text)]
+      result <- try @APIError $
+        withMockServer (jsonApp 404 errBody) $ \ac ->
+          getProject ac "nonexistent"
+      case result of
+        Left err -> aeMessage err `shouldBe` "not found"
+        Right _ -> expectationFailure "expected APIError"
+
+    it "aeMessage falls back to raw body when no message field" $ do
+      let errBody = object ["error" .= ("something" :: Text)]
+      result <- try @APIError $
+        withMockServer (jsonApp 400 errBody) $ \ac ->
+          getProject ac "p1"
+      case result of
+        Left err -> aeMessage err `shouldNotBe` ""
+        Right _ -> expectationFailure "expected APIError"
+
+  describe "deleteProject sends body" $ do
+    it "request body contains the expected JSON" $ do
+      bodyRef <- newIORef LBS.empty
+      let app req respond = do
+            body <- LBS.fromStrict <$> getRequestBodyChunk req
+            writeIORef bodyRef body
+            respond $ responseLBS status204 [] ""
+          deleteBody = object ["cascade" .= True]
+      _ <- try @SomeException $
+        withMockServer app $ \ac ->
+          deleteProject ac "proj_1" deleteBody
+      capturedBody <- readIORef bodyRef
+      let parsed = Aeson.decode capturedBody :: Maybe Value
+      parsed `shouldBe` Just (object ["cascade" .= True])
+
+  describe "Retry-After header" $ do
+    it "429 with Retry-After parses into aeRetryAfter" $ do
+      let errBody = object ["message" .= ("rate limited" :: Text)]
+          app _req respond =
+            respond $ responseLBS status429
+              [("Content-Type", "application/json"), ("Retry-After", "30")]
+              (Aeson.encode errBody)
+      result <- try @APIError $
+        withMockServer app $ \ac ->
+          getProject ac "p1"
+      case result of
+        Left err -> do
+          isRateLimited err `shouldBe` True
+          aeRetryAfter err `shouldBe` Just 30
+        Right _ -> expectationFailure "expected APIError"
+
+    it "429 without Retry-After has Nothing" $ do
+      let errBody = object ["message" .= ("rate limited" :: Text)]
+      result <- try @APIError $
+        withMockServer (jsonApp 429 errBody) $ \ac ->
+          getProject ac "p1"
+      case result of
+        Left err -> aeRetryAfter err `shouldBe` Nothing
+        Right _ -> expectationFailure "expected APIError"

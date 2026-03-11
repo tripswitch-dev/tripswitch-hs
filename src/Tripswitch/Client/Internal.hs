@@ -9,7 +9,8 @@
 -- Not intended for direct use — prefer the public API in "Tripswitch.Client".
 module Tripswitch.Client.Internal
   ( -- * Background threads
-    startSSEListener
+    startBackgroundThreads
+  , startSSEListener
   , startFlusher
   , startMetadataSync
 
@@ -31,11 +32,12 @@ module Tripswitch.Client.Internal
   ) where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (Async, async)
+import Control.Concurrent.Async (Async, async, race)
 import Control.Concurrent.STM
   ( TVar
   , atomically
   , modifyTVar'
+  , readTMVar
   , readTVar
   , readTVarIO
   , tryPutTMVar
@@ -43,7 +45,7 @@ import Control.Concurrent.STM
   , writeTVar
   )
 import Control.Exception (SomeException, catch, try)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, unless, void, when)
 import qualified Codec.Compression.GZip as GZip
 import Crypto.Hash (SHA256)
 import Crypto.MAC.HMAC (HMAC (..), hmac)
@@ -68,21 +70,20 @@ import Network.HTTP.Client
   , RequestBody (..)
   , Response (..)
   , httpLbs
+  , newManager
   , parseRequest
   , responseStatus
   )
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types.Status (statusCode)
 
 import Tripswitch.Client
   ( BatchPayload (..)
-  , BreakerMeta
-  , BreakerState (..)
   , BreakersMetadataResponse (..)
   , Client (..)
   , ClientConfig (..)
   , Logger (..)
   , ReportEntry
-  , RouterMeta
   , RoutersMetadataResponse (..)
   , SSEBreakerEvent (..)
   , parseBreakerState
@@ -115,6 +116,36 @@ metaSyncDefaultSeconds = 30
 -- | Retry backoffs in microseconds for ingest.
 ingestRetryBackoffs :: [Int]
 ingestRetryBackoffs = [100000, 400000, 1000000]
+
+-- ---------------------------------------------------------------------------
+-- Background Thread Orchestration
+-- ---------------------------------------------------------------------------
+
+-- | Start all background threads and block on SSE readiness (5s timeout).
+-- Call this after 'newClient' to make the client fully operational.
+startBackgroundThreads :: Client -> IO ()
+startBackgroundThreads client = do
+  let cfg = cConfig client
+  mgr <- newManager tlsManagerSettings
+
+  unless (cfgSSEDisabled cfg || T.null (cfgApiKey cfg)) $ do
+    t <- startSSEListener client mgr
+    atomically $ writeTVar (cSSEThread client) (Just t)
+
+  unless (cfgFlusherDisabled cfg) $ do
+    t <- startFlusher client mgr
+    atomically $ writeTVar (cFlusherThread client) (Just t)
+
+  unless (cfgMetaSyncDisabled cfg) $ do
+    t <- startMetadataSync client mgr
+    atomically $ writeTVar (cMetaSyncThread client) (Just t)
+
+  -- Block on SSE sync with 5s timeout (match Go/Python SDKs)
+  unless (T.null (cfgApiKey cfg) || cfgSSEDisabled cfg) $ do
+    result <- race (threadDelay 5_000_000) (atomically $ readTMVar (cSSEReady client))
+    case result of
+      Left () -> logWarn (cfgLogger cfg) "SSE sync timeout after 5s, proceeding"
+      Right () -> pure ()
 
 -- ---------------------------------------------------------------------------
 -- SSE Listener
