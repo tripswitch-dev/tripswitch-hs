@@ -75,14 +75,11 @@ import Network.HTTP.Types.Status (statusCode)
 
 import Tripswitch.Client
   ( BatchPayload (..)
-  , BreakerMeta
-  , BreakerState (..)
   , BreakersMetadataResponse (..)
   , Client (..)
   , ClientConfig (..)
   , Logger (..)
   , ReportEntry
-  , RouterMeta
   , RoutersMetadataResponse (..)
   , SSEBreakerEvent (..)
   , parseBreakerState

@@ -31,6 +31,7 @@ module Tripswitch.Client
     -- * Report
   , report
   , ReportInput (..)
+  , defaultReportInput
 
     -- * Breaker State
   , BreakerState (..)
@@ -76,7 +77,8 @@ module Tripswitch.Client
   , Text
   ) where
 
-import Control.Concurrent.Async (Async, cancel)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (Async, cancel, race)
 import Control.Concurrent.STM
   ( TBQueue
   , TMVar
@@ -86,6 +88,7 @@ import Control.Concurrent.STM
   , newEmptyTMVarIO
   , newTBQueueIO
   , newTVarIO
+  , readTMVar
   , readTVar
   , readTVarIO
   , tryPutTMVar
@@ -404,6 +407,18 @@ data ReportInput = ReportInput
   }
   deriving stock (Eq, Show)
 
+-- | Default report input with all fields empty/zero.
+defaultReportInput :: ReportInput
+defaultReportInput =
+  ReportInput
+    { riRouterID = ""
+    , riMetric = ""
+    , riValue = 0
+    , riOK = True
+    , riTraceID = ""
+    , riTags = Map.empty
+    }
+
 -- ---------------------------------------------------------------------------
 -- Client (opaque)
 -- ---------------------------------------------------------------------------
@@ -481,6 +496,13 @@ newClient cfg = do
   when (T.null (cfgApiKey cfg) || cfgSSEDisabled cfg) $
     void $ atomically $ tryPutTMVar sseReady ()
 
+  -- Block on SSE sync with 5s timeout (match Go/Python SDKs)
+  unless (T.null (cfgApiKey cfg) || cfgSSEDisabled cfg) $ do
+    result <- race (threadDelay 5_000_000) (atomically $ readTMVar sseReady)
+    case result of
+      Left () -> logWarn (cfgLogger cfg) "SSE sync timeout after 5s, proceeding"
+      Right () -> pure ()
+
   pure client
 
 closeClient :: Client -> IO ()
@@ -520,7 +542,7 @@ execute_ client cfg task = do
 executeWithDeferred
   :: Client
   -> ExecConfig
-  -> (a -> Maybe SomeException -> IO (Map Text Double))
+  -> (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> IO a
   -> IO (Either TripSwitchError a)
 executeWithDeferred client cfg deferredFn task =
@@ -530,7 +552,7 @@ executeWithDeferred client cfg deferredFn task =
 executeInternal
   :: Client
   -> ExecConfig
-  -> Maybe (a -> Maybe SomeException -> IO (Map Text Double))
+  -> Maybe (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> IO a
   -> IO (Either TripSwitchError a)
 executeInternal client cfg mDeferredFn task = do
@@ -713,7 +735,7 @@ resolveTraceID client cfg
 emitMetrics
   :: Client
   -> ExecConfig
-  -> Maybe (a -> Maybe SomeException -> IO (Map Text Double))
+  -> Maybe (Maybe a -> Maybe SomeException -> IO (Map Text Double))
   -> Double
   -> Bool
   -> Text
@@ -747,8 +769,8 @@ emitMetrics client cfg mDeferredFn durationMs isOK traceId taskResult = do
       Nothing -> pure ()
       Just deferredFn -> do
         mDeferred <- case taskResult of
-          Right val -> trySafe $ deferredFn val Nothing
-          Left exc -> trySafe $ deferredFn (error "task failed") (Just exc)
+          Right val -> trySafe $ deferredFn (Just val) Nothing
+          Left exc -> trySafe $ deferredFn Nothing (Just exc)
         case mDeferred of
           Nothing -> logWarn lg "deferred metrics function threw exception"
           Just deferredMap ->

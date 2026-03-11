@@ -3,7 +3,6 @@ module Tripswitch.ClientSpec (spec) where
 import Control.Concurrent.STM (atomically, modifyTVar', tryReadTBQueue, writeTVar)
 import Control.Exception (Exception (..), SomeException, throwIO, try)
 import qualified Data.Map.Strict as Map
-import Data.Text (Text)
 import Test.Hspec
 
 import Tripswitch.Client
@@ -281,7 +280,7 @@ spec = do
         { ecRouterID = "rtr-1"
         , ecMetrics = Map.singleton "latency" MetricLatency
         }
-        (\(val :: Int) _mExc ->
+        (\(_mVal :: Maybe Int) _mExc ->
             pure $ Map.fromList
               [ ("prompt_tokens", 100.0)
               , ("completion_tokens", 200.0)
@@ -302,7 +301,7 @@ spec = do
       _ <- try @SomeException $ executeWithDeferred client defaultExecConfig
         { ecRouterID = "rtr-1"
         }
-        (\(_val :: Int) _mExc -> pure Map.empty)
+        (\(_mVal :: Maybe Int) _mExc -> pure Map.empty)
         (throwIO TestException)
       entries <- drainQueue client
       length entries `shouldBe` 0
@@ -314,7 +313,7 @@ spec = do
         { ecRouterID = "rtr-1"
         , ecMetrics = Map.singleton "count" (MetricLiteral 1.0)
         }
-        (\(_val :: String) _mExc ->
+        (\(_mVal :: Maybe String) _mExc ->
             error "boom" :: IO (Map.Map Text Double))
         (pure "ok")
       entries <- drainQueue client

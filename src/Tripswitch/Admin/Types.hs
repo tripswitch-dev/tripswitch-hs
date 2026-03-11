@@ -44,16 +44,14 @@ import Data.Aeson
   ( FromJSON (..)
   , ToJSON (..)
   , Value (..)
-  , object
   , withObject
   , withText
   , (.:)
   , (.:?)
-  , (.=)
+  , (.!=)
   )
 import Data.Int (Int64)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -393,3 +391,10 @@ data Pager a = Pager
   , pagerHasMore :: !Bool
   }
   deriving stock (Eq, Show)
+
+instance (FromJSON a) => FromJSON (Pager a) where
+  parseJSON = withObject "Pager" $ \v ->
+    Pager
+      <$> v .: "items"
+      <*> v .:? "cursor"
+      <*> v .:? "has_more" .!= False

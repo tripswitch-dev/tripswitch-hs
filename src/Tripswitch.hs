@@ -46,6 +46,7 @@ module Tripswitch
     -- * Report
   , report
   , ReportInput (..)
+  , defaultReportInput
 
     -- * Breaker State
   , BreakerState (..)
