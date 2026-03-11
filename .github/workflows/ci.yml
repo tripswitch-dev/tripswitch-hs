@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: GHC ${{ matrix.ghc }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        ghc: ['9.6', '9.8', '9.10']
+        include:
+          - os: macos-latest
+            ghc: '9.6'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: ${{ matrix.ghc }}
+
+      - name: Configure
+        run: |
+          cabal configure --enable-tests --test-show-details=direct
+          cabal build all --dry-run
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/cabal.project', '**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-
+
+      - name: Install dependencies
+        run: cabal build all --only-dependencies
+
+      - name: Build
+        run: cabal build all -Werror
+
+      - name: Test
+        run: cabal test all
+
+      - name: Check documentation
+        run: cabal haddock all
+
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6'
+
+      - name: Generate sdist
+        run: cabal sdist all
+
+      - name: Check sdist builds
+        run: |
+          mkdir -p /tmp/sdist-check
+          cp dist-newstyle/sdist/*.tar.gz /tmp/sdist-check/
+          cd /tmp/sdist-check
+          tar xzf *.tar.gz
+          cd tripswitch-*
+          cabal build all
