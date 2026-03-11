@@ -94,7 +94,7 @@ spec = do
             , "has_more" .= False
             ]
       result <- withMockServer (jsonApp 200 mockPager) $ \ac ->
-        listProjects ac defaultListParams
+        listProjects ac
       length (pagerItems result) `shouldBe` 2
       pagerHasMore result `shouldBe` False
 
@@ -344,7 +344,7 @@ spec = do
         Right _ -> expectationFailure "expected APIError"
 
   describe "deleteProject sends body" $ do
-    it "request body is forwarded" $ do
+    it "request body contains the expected JSON" $ do
       bodyRef <- newIORef LBS.empty
       let app req respond = do
             body <- LBS.fromStrict <$> getRequestBodyChunk req
@@ -355,7 +355,8 @@ spec = do
         withMockServer app $ \ac ->
           deleteProject ac "proj_1" deleteBody
       capturedBody <- readIORef bodyRef
-      capturedBody `shouldNotBe` LBS.empty
+      let parsed = Aeson.decode capturedBody :: Maybe Value
+      parsed `shouldBe` Just (object ["cascade" .= True])
 
   describe "Retry-After header" $ do
     it "429 with Retry-After parses into aeRetryAfter" $ do

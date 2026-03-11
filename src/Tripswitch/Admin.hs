@@ -74,6 +74,14 @@ module Tripswitch.Admin
   , updateBreakerMetadata
   , updateRouterMetadata
 
+    -- * With pagination params
+  , listProjectsWithParams
+  , listBreakersWithParams
+  , listRoutersWithParams
+  , listNotificationChannelsWithParams
+  , listEventsWithParams
+  , listProjectKeysWithParams
+
     -- * With custom config
   , listProjectsWithConfig
   , createProjectWithConfig
@@ -138,7 +146,6 @@ import Network.HTTP.Types.Status (statusCode)
 import Text.Read (readMaybe)
 
 import Tripswitch.Admin.Errors (APIError (..), AdminErrorKind (..))
-import Tripswitch.Client (Status (..))
 import Tripswitch.Admin.Types
 
 -- ---------------------------------------------------------------------------
@@ -224,8 +231,8 @@ doRequest ac httpMethod path mBody rc = do
           Right val -> pure val
         else throwIO $ parseAPIError status resp
 
-doRequestNoBody :: AdminClient -> Text -> Text -> Maybe Value -> RequestConfig -> IO ()
-doRequestNoBody ac httpMethod path mBody rc = do
+doRequest_ :: AdminClient -> Text -> Text -> Maybe Value -> RequestConfig -> IO ()
+doRequest_ ac httpMethod path mBody rc = do
   let cfg = adminConfig ac
       url = T.unpack (acBaseURL cfg) <> T.unpack path
   req <- parseRequest url
@@ -300,11 +307,15 @@ appendListParams path lp =
 -- Projects
 -- ---------------------------------------------------------------------------
 
--- | List all projects.
-listProjects :: AdminClient -> ListParams -> IO (Pager Project)
-listProjects ac lp = listProjectsWithConfig ac lp defaultRequestConfig
+-- | List all projects (first page).
+listProjects :: AdminClient -> IO (Pager Project)
+listProjects ac = listProjectsWithParams ac defaultListParams
 
--- | List all projects with custom request config.
+-- | List projects with pagination params.
+listProjectsWithParams :: AdminClient -> ListParams -> IO (Pager Project)
+listProjectsWithParams ac lp = listProjectsWithConfig ac lp defaultRequestConfig
+
+-- | List projects with pagination params and custom request config.
 listProjectsWithConfig :: AdminClient -> ListParams -> RequestConfig -> IO (Pager Project)
 listProjectsWithConfig ac lp rc = doRequest ac "GET" (appendListParams "/v1/projects" lp) Nothing rc
 
@@ -338,7 +349,7 @@ deleteProject ac pid body = deleteProjectWithConfig ac pid body defaultRequestCo
 
 -- | Delete a project with custom request config.
 deleteProjectWithConfig :: AdminClient -> Text -> Value -> RequestConfig -> IO ()
-deleteProjectWithConfig ac pid body rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid) (Just body) rc
+deleteProjectWithConfig ac pid body rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid) (Just body) rc
 
 -- | Rotate a project's ingest secret.
 rotateIngestSecret :: AdminClient -> Text -> IO Value
@@ -352,11 +363,15 @@ rotateIngestSecretWithConfig ac pid rc = doRequest ac "POST" ("/v1/projects/" <>
 -- Breakers
 -- ---------------------------------------------------------------------------
 
--- | List breakers for a project.
-listBreakers :: AdminClient -> Text -> ListParams -> IO (Pager Breaker)
-listBreakers ac pid lp = listBreakersWithConfig ac pid lp defaultRequestConfig
+-- | List breakers for a project (first page).
+listBreakers :: AdminClient -> Text -> IO (Pager Breaker)
+listBreakers ac pid = listBreakersWithParams ac pid defaultListParams
 
--- | List breakers for a project with custom request config.
+-- | List breakers with pagination params.
+listBreakersWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Breaker)
+listBreakersWithParams ac pid lp = listBreakersWithConfig ac pid lp defaultRequestConfig
+
+-- | List breakers with pagination params and custom request config.
 listBreakersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Breaker)
 listBreakersWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/breakers") lp) Nothing rc
 
@@ -390,7 +405,7 @@ deleteBreaker ac pid bid = deleteBreakerWithConfig ac pid bid defaultRequestConf
 
 -- | Delete a breaker with custom request config.
 deleteBreakerWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO ()
-deleteBreakerWithConfig ac pid bid rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid <> "/breakers/" <> bid) Nothing rc
+deleteBreakerWithConfig ac pid bid rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid <> "/breakers/" <> bid) Nothing rc
 
 -- | Sync (bulk replace) breakers.
 syncBreakers :: AdminClient -> Text -> Value -> IO [Breaker]
@@ -420,11 +435,15 @@ batchGetBreakerStatesWithConfig ac pid body rc = doRequest ac "POST" ("/v1/proje
 -- Routers
 -- ---------------------------------------------------------------------------
 
--- | List routers for a project.
-listRouters :: AdminClient -> Text -> ListParams -> IO (Pager Router)
-listRouters ac pid lp = listRoutersWithConfig ac pid lp defaultRequestConfig
+-- | List routers for a project (first page).
+listRouters :: AdminClient -> Text -> IO (Pager Router)
+listRouters ac pid = listRoutersWithParams ac pid defaultListParams
 
--- | List routers for a project with custom request config.
+-- | List routers with pagination params.
+listRoutersWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Router)
+listRoutersWithParams ac pid lp = listRoutersWithConfig ac pid lp defaultRequestConfig
+
+-- | List routers with pagination params and custom request config.
 listRoutersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Router)
 listRoutersWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/routers") lp) Nothing rc
 
@@ -458,7 +477,7 @@ deleteRouter ac pid rid = deleteRouterWithConfig ac pid rid defaultRequestConfig
 
 -- | Delete a router with custom request config.
 deleteRouterWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO ()
-deleteRouterWithConfig ac pid rid rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid <> "/routers/" <> rid) Nothing rc
+deleteRouterWithConfig ac pid rid rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid <> "/routers/" <> rid) Nothing rc
 
 -- | Link a breaker to a router.
 linkBreaker :: AdminClient -> Text -> Text -> Value -> IO Value
@@ -474,17 +493,21 @@ unlinkBreaker ac pid rid bid = unlinkBreakerWithConfig ac pid rid bid defaultReq
 
 -- | Unlink a breaker from a router with custom request config.
 unlinkBreakerWithConfig :: AdminClient -> Text -> Text -> Text -> RequestConfig -> IO ()
-unlinkBreakerWithConfig ac pid rid bid rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid <> "/routers/" <> rid <> "/breakers/" <> bid) Nothing rc
+unlinkBreakerWithConfig ac pid rid bid rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid <> "/routers/" <> rid <> "/breakers/" <> bid) Nothing rc
 
 -- ---------------------------------------------------------------------------
 -- Notification Channels
 -- ---------------------------------------------------------------------------
 
--- | List notification channels.
-listNotificationChannels :: AdminClient -> Text -> ListParams -> IO (Pager NotificationChannel)
-listNotificationChannels ac pid lp = listNotificationChannelsWithConfig ac pid lp defaultRequestConfig
+-- | List notification channels (first page).
+listNotificationChannels :: AdminClient -> Text -> IO (Pager NotificationChannel)
+listNotificationChannels ac pid = listNotificationChannelsWithParams ac pid defaultListParams
 
--- | List notification channels with custom request config.
+-- | List notification channels with pagination params.
+listNotificationChannelsWithParams :: AdminClient -> Text -> ListParams -> IO (Pager NotificationChannel)
+listNotificationChannelsWithParams ac pid lp = listNotificationChannelsWithConfig ac pid lp defaultRequestConfig
+
+-- | List notification channels with pagination params and custom request config.
 listNotificationChannelsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager NotificationChannel)
 listNotificationChannelsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/notification-channels") lp) Nothing rc
 
@@ -518,7 +541,7 @@ deleteNotificationChannel ac pid cid = deleteNotificationChannelWithConfig ac pi
 
 -- | Delete a notification channel with custom request config.
 deleteNotificationChannelWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO ()
-deleteNotificationChannelWithConfig ac pid cid rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid <> "/notification-channels/" <> cid) Nothing rc
+deleteNotificationChannelWithConfig ac pid cid rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid <> "/notification-channels/" <> cid) Nothing rc
 
 -- | Test a notification channel.
 testNotificationChannel :: AdminClient -> Text -> Text -> IO ()
@@ -526,17 +549,21 @@ testNotificationChannel ac pid cid = testNotificationChannelWithConfig ac pid ci
 
 -- | Test a notification channel with custom request config.
 testNotificationChannelWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO ()
-testNotificationChannelWithConfig ac pid cid rc = doRequestNoBody ac "POST" ("/v1/projects/" <> pid <> "/notification-channels/" <> cid <> "/test") Nothing rc
+testNotificationChannelWithConfig ac pid cid rc = doRequest_ ac "POST" ("/v1/projects/" <> pid <> "/notification-channels/" <> cid <> "/test") Nothing rc
 
 -- ---------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------
 
--- | List events for a project.
-listEvents :: AdminClient -> Text -> ListParams -> IO (Pager Event)
-listEvents ac pid lp = listEventsWithConfig ac pid lp defaultRequestConfig
+-- | List events for a project (first page).
+listEvents :: AdminClient -> Text -> IO (Pager Event)
+listEvents ac pid = listEventsWithParams ac pid defaultListParams
 
--- | List events for a project with custom request config.
+-- | List events with pagination params.
+listEventsWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Event)
+listEventsWithParams ac pid lp = listEventsWithConfig ac pid lp defaultRequestConfig
+
+-- | List events with pagination params and custom request config.
 listEventsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Event)
 listEventsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/events") lp) Nothing rc
 
@@ -544,11 +571,15 @@ listEventsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/p
 -- Project Keys
 -- ---------------------------------------------------------------------------
 
--- | List project keys.
-listProjectKeys :: AdminClient -> Text -> ListParams -> IO (Pager ProjectKey)
-listProjectKeys ac pid lp = listProjectKeysWithConfig ac pid lp defaultRequestConfig
+-- | List project keys (first page).
+listProjectKeys :: AdminClient -> Text -> IO (Pager ProjectKey)
+listProjectKeys ac pid = listProjectKeysWithParams ac pid defaultListParams
 
--- | List project keys with custom request config.
+-- | List project keys with pagination params.
+listProjectKeysWithParams :: AdminClient -> Text -> ListParams -> IO (Pager ProjectKey)
+listProjectKeysWithParams ac pid lp = listProjectKeysWithConfig ac pid lp defaultRequestConfig
+
+-- | List project keys with pagination params and custom request config.
 listProjectKeysWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager ProjectKey)
 listProjectKeysWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/keys") lp) Nothing rc
 
@@ -566,7 +597,7 @@ deleteProjectKey ac pid kid = deleteProjectKeyWithConfig ac pid kid defaultReque
 
 -- | Delete a project key with custom request config.
 deleteProjectKeyWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO ()
-deleteProjectKeyWithConfig ac pid kid rc = doRequestNoBody ac "DELETE" ("/v1/projects/" <> pid <> "/keys/" <> kid) Nothing rc
+deleteProjectKeyWithConfig ac pid kid rc = doRequest_ ac "DELETE" ("/v1/projects/" <> pid <> "/keys/" <> kid) Nothing rc
 
 -- ---------------------------------------------------------------------------
 -- Status

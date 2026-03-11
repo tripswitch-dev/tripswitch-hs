@@ -34,6 +34,9 @@ module Tripswitch.Admin.Types
     -- * Project Key
   , ProjectKey (..)
 
+    -- * Status
+  , Status (..)
+
     -- * Pagination
   , Pager (..)
   , ListParams (..)
@@ -368,6 +371,25 @@ instance FromJSON ProjectKey where
       <*> v .: "key_prefix"
       <*> v .:? "last_used_at"
       <*> v .:? "inserted_at"
+
+-- ---------------------------------------------------------------------------
+-- Status
+-- ---------------------------------------------------------------------------
+
+-- | Project status summary.
+data Status = Status
+  { stOpenCount :: !Int
+  , stClosedCount :: !Int
+  , stLastEvalMs :: !Int64
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Status where
+  parseJSON = withObject "Status" $ \v ->
+    Status
+      <$> v .: "open_count"
+      <*> v .: "closed_count"
+      <*> v .: "last_eval_ms"
 
 -- ---------------------------------------------------------------------------
 -- Pagination

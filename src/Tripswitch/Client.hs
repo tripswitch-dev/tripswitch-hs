@@ -48,8 +48,7 @@ module Tripswitch.Client
   , getBreakersMetadata
   , getRoutersMetadata
 
-    -- * Status & Stats
-  , Status (..)
+    -- * Stats
   , SDKStats (..)
   , getStats
 
@@ -77,8 +76,7 @@ module Tripswitch.Client
   , Text
   ) where
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (Async, cancel, race)
+import Control.Concurrent.Async (Async, cancel)
 import Control.Concurrent.STM
   ( TBQueue
   , TMVar
@@ -88,7 +86,6 @@ import Control.Concurrent.STM
   , newEmptyTMVarIO
   , newTBQueueIO
   , newTVarIO
-  , readTMVar
   , readTVar
   , readTVarIO
   , tryPutTMVar
@@ -266,20 +263,6 @@ instance FromJSON RoutersMetadataResponse where
 -- ---------------------------------------------------------------------------
 -- Status & Stats
 -- ---------------------------------------------------------------------------
-
-data Status = Status
-  { stOpenCount :: !Int
-  , stClosedCount :: !Int
-  , stLastEvalMs :: !Int64
-  }
-  deriving stock (Eq, Show)
-
-instance FromJSON Status where
-  parseJSON = withObject "Status" $ \v ->
-    Status
-      <$> v .: "open_count"
-      <*> v .: "closed_count"
-      <*> v .: "last_eval_ms"
 
 data SDKStats = SDKStats
   { ssDroppedSamples :: !Word64
@@ -495,13 +478,6 @@ newClient cfg = do
 
   when (T.null (cfgApiKey cfg) || cfgSSEDisabled cfg) $
     void $ atomically $ tryPutTMVar sseReady ()
-
-  -- Block on SSE sync with 5s timeout (match Go/Python SDKs)
-  unless (T.null (cfgApiKey cfg) || cfgSSEDisabled cfg) $ do
-    result <- race (threadDelay 5_000_000) (atomically $ readTMVar sseReady)
-    case result of
-      Left () -> logWarn (cfgLogger cfg) "SSE sync timeout after 5s, proceeding"
-      Right () -> pure ()
 
   pure client
 
