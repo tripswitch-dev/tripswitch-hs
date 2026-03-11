@@ -67,7 +67,7 @@ spec = do
   describe "Projects" $ do
     it "getProject returns a project" $ do
       let mockProject = object
-            [ "id" .= ("proj_1" :: Text)
+            [ "project_id" .= ("proj_1" :: Text)
             , "name" .= ("My Project" :: Text)
             , "enable_signed_ingest" .= False
             ]
@@ -78,7 +78,7 @@ spec = do
 
     it "createProject sends POST and returns project" $ do
       let mockProject = object
-            [ "id" .= ("proj_new" :: Text)
+            [ "project_id" .= ("proj_new" :: Text)
             , "name" .= ("New Project" :: Text)
             , "enable_signed_ingest" .= False
             ]
@@ -86,17 +86,18 @@ spec = do
         createProject ac (object ["name" .= ("New Project" :: Text)])
       projName result `shouldBe` "New Project"
 
-    it "listProjects returns projects in pager" $ do
-      let mockPager = object
-            [ "items" .= [ object ["id" .= ("p1" :: Text), "name" .= ("P1" :: Text), "enable_signed_ingest" .= False]
-                         , object ["id" .= ("p2" :: Text), "name" .= ("P2" :: Text), "enable_signed_ingest" .= True]
-                         ]
-            , "has_more" .= False
+    it "listProjects returns projects in response" $ do
+      let mockResp = object
+            [ "projects" .=
+                [ object ["project_id" .= ("p1" :: Text), "name" .= ("P1" :: Text), "enable_signed_ingest" .= False]
+                , object ["project_id" .= ("p2" :: Text), "name" .= ("P2" :: Text), "enable_signed_ingest" .= True]
+                ]
+            , "count" .= (2 :: Int)
             ]
-      result <- withMockServer (jsonApp 200 mockPager) $ \ac ->
+      result <- withMockServer (jsonApp 200 mockResp) $ \ac ->
         listProjects ac
-      length (pagerItems result) `shouldBe` 2
-      pagerHasMore result `shouldBe` False
+      length (lprProjects result) `shouldBe` 2
+      lprCount result `shouldBe` 2
 
   -- =======================================================================
   -- Breakers
@@ -241,7 +242,7 @@ spec = do
             case authHeader of
               Just val | val == "Bearer test-admin-key" ->
                 respond $ responseLBS status200 []
-                  (Aeson.encode (object ["id" .= ("p1" :: Text), "name" .= ("P" :: Text), "enable_signed_ingest" .= False]))
+                  (Aeson.encode (object ["project_id" .= ("p1" :: Text), "name" .= ("P" :: Text), "enable_signed_ingest" .= False]))
               _ ->
                 respond $ responseLBS status401 [] "{\"message\":\"bad auth\"}"
       result <- withMockServer app $ \ac ->

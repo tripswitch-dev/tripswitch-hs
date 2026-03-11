@@ -37,8 +37,16 @@ module Tripswitch.Admin.Types
     -- * Status
   , Status (..)
 
+    -- * List Responses
+  , ListProjectsResponse (..)
+  , ListBreakersResponse (..)
+  , ListRoutersResponse (..)
+  , ListEventsResponse (..)
+  , ListChannelsResponse (..)
+  , ListKeysResponse (..)
+  , BatchBreakerStatesResponse (..)
+
     -- * Pagination
-  , Pager (..)
   , ListParams (..)
   , defaultListParams
   ) where
@@ -204,16 +212,16 @@ data Project = Project
 instance FromJSON Project where
   parseJSON = withObject "Project" $ \v ->
     Project
-      <$> v .: "id"
-      <*> v .: "name"
+      <$> v .: "project_id"
+      <*> v .:? "name" .!= ""
       <*> v .:? "slack_webhook_url"
       <*> v .:? "trace_id_url_template"
-      <*> v .: "enable_signed_ingest"
+      <*> v .:? "enable_signed_ingest" .!= False
 
 -- | A circuit breaker definition.
 data Breaker = Breaker
   { brkID :: !Text
-  , brkRouterID :: !Text
+  , brkRouterID :: !(Maybe Text)
   , brkName :: !Text
   , brkMetric :: !Text
   , brkKind :: !BreakerKind
@@ -230,7 +238,8 @@ data Breaker = Breaker
   , brkHalfOpenIndeterminatePolicy :: !(Maybe HalfOpenPolicy)
   , brkRecoveryWindowMs :: !(Maybe Int64)
   , brkRecoveryAllowRateRampSteps :: !(Maybe Int)
-  , brkActions :: !(Maybe [Text])
+  , brkActions :: !(Maybe Value)
+  , brkKindParams :: !(Maybe Value)
   , brkMetadata :: !(Map Text Text)
   }
   deriving stock (Eq, Show)
@@ -239,7 +248,7 @@ instance FromJSON Breaker where
   parseJSON = withObject "Breaker" $ \v ->
     Breaker
       <$> v .: "id"
-      <*> v .: "router_id"
+      <*> v .:? "router_id"
       <*> v .: "name"
       <*> v .: "metric"
       <*> v .: "kind"
@@ -251,13 +260,14 @@ instance FromJSON Breaker where
       <*> v .: "cooldown_ms"
       <*> v .: "eval_interval_ms"
       <*> v .:? "half_open_confirmation_ms"
-      <*> v .: "half_open_backoff_enabled"
+      <*> v .:? "half_open_backoff_enabled" .!= False
       <*> v .:? "half_open_backoff_cap_ms"
       <*> v .:? "half_open_indeterminate_policy"
       <*> v .:? "recovery_window_ms"
       <*> v .:? "recovery_allow_rate_ramp_steps"
       <*> v .:? "actions"
-      <*> v .: "metadata"
+      <*> v .:? "kind_params"
+      <*> v .:? "metadata" .!= mempty
 
 -- | A router.
 data Router = Router
@@ -280,18 +290,21 @@ instance FromJSON Router where
       <*> v .: "name"
       <*> v .: "mode"
       <*> v .: "enabled"
-      <*> v .: "breaker_count"
+      <*> v .:? "breaker_count" .!= 0
       <*> v .:? "breakers"
       <*> v .:? "inserted_at"
       <*> v .:? "created_by"
-      <*> v .: "metadata"
+      <*> v .:? "metadata" .!= mempty
 
 -- | Breaker state from the admin API.
 data AdminBreakerState = AdminBreakerState
   { absBreakerID :: !Text
+  , absName :: !(Maybe Text)
   , absState :: !Text
-  , absAllowRate :: !Double
-  , absUpdatedAt :: !(Maybe Text)
+  , absStateSinceMs :: !(Maybe Int64)
+  , absLastEvalMs :: !(Maybe Int64)
+  , absNextEvalMs :: !(Maybe Int64)
+  , absIndeterminate :: !(Maybe Bool)
   }
   deriving stock (Eq, Show)
 
@@ -299,15 +312,16 @@ instance FromJSON AdminBreakerState where
   parseJSON = withObject "AdminBreakerState" $ \v ->
     AdminBreakerState
       <$> v .: "breaker_id"
+      <*> v .:? "name"
       <*> v .: "state"
-      <*> v .: "allow_rate"
-      <*> v .:? "updated_at"
+      <*> v .:? "state_since_ms"
+      <*> v .:? "last_eval_ms"
+      <*> v .:? "next_eval_ms"
+      <*> v .:? "indeterminate"
 
 -- | A notification channel.
 data NotificationChannel = NotificationChannel
   { ncID :: !Text
-  , ncProjectID :: !Text
-  , ncName :: !Text
   , ncChannel :: !NotificationChannelType
   , ncConfig :: !(Map Text Value)
   , ncEvents :: ![NotificationEventType]
@@ -321,37 +335,37 @@ instance FromJSON NotificationChannel where
   parseJSON = withObject "NotificationChannel" $ \v ->
     NotificationChannel
       <$> v .: "id"
-      <*> v .: "project_id"
-      <*> v .: "name"
       <*> v .: "channel"
-      <*> v .: "config"
-      <*> v .: "events"
-      <*> v .: "enabled"
+      <*> v .:? "config" .!= mempty
+      <*> v .:? "events" .!= []
+      <*> v .:? "enabled" .!= True
       <*> v .:? "created_at"
       <*> v .:? "updated_at"
 
 -- | A breaker state change event.
 data Event = Event
-  { evID :: !Text
-  , evProjectID :: !Text
-  , evBreakerID :: !Text
-  , evFromState :: !Text
-  , evToState :: !Text
-  , evReason :: !(Maybe Text)
-  , evTimestamp :: !Text
+  { evBreakerID :: !Text
+  , evName :: !(Maybe Text)
+  , evTsMs :: !Int64
+  , evTransitionSeq :: !Int
+  , evPrev :: !Text
+  , evCurr :: !Text
+  , evAgg :: !(Maybe Value)
+  , evRule :: !(Maybe Value)
   }
   deriving stock (Eq, Show)
 
 instance FromJSON Event where
   parseJSON = withObject "Event" $ \v ->
     Event
-      <$> v .: "id"
-      <*> v .: "project_id"
-      <*> v .: "breaker_id"
-      <*> v .: "from_state"
-      <*> v .: "to_state"
-      <*> v .:? "reason"
-      <*> v .: "timestamp"
+      <$> v .: "breaker_id"
+      <*> v .:? "name"
+      <*> v .: "ts_ms"
+      <*> v .: "transition_seq"
+      <*> v .: "prev"
+      <*> v .: "curr"
+      <*> v .:? "agg"
+      <*> v .:? "rule"
 
 -- | A project API key.
 data ProjectKey = ProjectKey
@@ -392,6 +406,99 @@ instance FromJSON Status where
       <*> v .: "last_eval_ms"
 
 -- ---------------------------------------------------------------------------
+-- List Response Types
+-- ---------------------------------------------------------------------------
+
+-- | Response from listing projects.
+data ListProjectsResponse = ListProjectsResponse
+  { lprProjects :: ![Project]
+  , lprCount :: !Int
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListProjectsResponse where
+  parseJSON = withObject "ListProjectsResponse" $ \v ->
+    ListProjectsResponse
+      <$> v .: "projects"
+      <*> v .:? "count" .!= 0
+
+-- | Response from listing breakers.
+data ListBreakersResponse = ListBreakersResponse
+  { lbrBreakers :: ![Breaker]
+  , lbrCount :: !Int
+  , lbrHash :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListBreakersResponse where
+  parseJSON = withObject "ListBreakersResponse" $ \v ->
+    ListBreakersResponse
+      <$> v .: "breakers"
+      <*> v .:? "count" .!= 0
+      <*> v .:? "hash"
+
+-- | Response from listing routers.
+data ListRoutersResponse = ListRoutersResponse
+  { lrrRouters :: ![Router]
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListRoutersResponse where
+  parseJSON = withObject "ListRoutersResponse" $ \v ->
+    ListRoutersResponse
+      <$> v .: "routers"
+
+-- | Response from listing events.
+data ListEventsResponse = ListEventsResponse
+  { lerEvents :: ![Event]
+  , lerReturned :: !Int
+  , lerNextCursor :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListEventsResponse where
+  parseJSON = withObject "ListEventsResponse" $ \v ->
+    ListEventsResponse
+      <$> v .: "events"
+      <*> v .:? "returned" .!= 0
+      <*> v .:? "next_cursor"
+
+-- | Response from listing notification channels.
+data ListChannelsResponse = ListChannelsResponse
+  { lcrChannels :: ![NotificationChannel]
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListChannelsResponse where
+  parseJSON = withObject "ListChannelsResponse" $ \v ->
+    ListChannelsResponse
+      <$> v .: "notification_channels"
+
+-- | Response from listing project keys.
+data ListKeysResponse = ListKeysResponse
+  { lkrKeys :: ![ProjectKey]
+  , lkrCount :: !Int
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListKeysResponse where
+  parseJSON = withObject "ListKeysResponse" $ \v ->
+    ListKeysResponse
+      <$> v .: "keys"
+      <*> v .:? "count" .!= 0
+
+-- | Response from batch getting breaker states.
+data BatchBreakerStatesResponse = BatchBreakerStatesResponse
+  { bbsStates :: ![AdminBreakerState]
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON BatchBreakerStatesResponse where
+  parseJSON = withObject "BatchBreakerStatesResponse" $ \v ->
+    BatchBreakerStatesResponse
+      <$> v .: "states"
+
+-- ---------------------------------------------------------------------------
 -- Pagination
 -- ---------------------------------------------------------------------------
 
@@ -405,18 +512,3 @@ data ListParams = ListParams
 -- | Default list parameters.
 defaultListParams :: ListParams
 defaultListParams = ListParams Nothing Nothing
-
--- | Iterator for paginated list results.
-data Pager a = Pager
-  { pagerItems :: ![a]
-  , pagerCursor :: !(Maybe Text)
-  , pagerHasMore :: !Bool
-  }
-  deriving stock (Eq, Show)
-
-instance (FromJSON a) => FromJSON (Pager a) where
-  parseJSON = withObject "Pager" $ \v ->
-    Pager
-      <$> v .: "items"
-      <*> v .:? "cursor"
-      <*> v .:? "has_more" .!= False
