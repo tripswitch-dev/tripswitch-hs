@@ -57,8 +57,9 @@ spec = do
           withClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
             atomically $ modifyTVar' (cBreakerStates client) (Map.insert "test-brk" Open)
             states <- getAllStates client
-            length states `shouldBe` 1
-            bsState (head states) `shouldBe` Open
+            case states of
+              [s] -> bsState s `shouldBe` Open
+              _   -> expectationFailure $ "expected 1 state, got " <> show (length states)
 
         it "close is idempotent" $ do
           client <- newClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True }
