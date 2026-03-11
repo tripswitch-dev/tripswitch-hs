@@ -431,9 +431,19 @@ data Client = Client
 -- Client Lifecycle
 -- ---------------------------------------------------------------------------
 
+-- | Create a client with 'bracket' to guarantee cleanup.
+--
+-- __Note:__ This version does not start background threads (SSE, flusher,
+-- metadata sync). For a batteries-included client, use @Tripswitch.'Tripswitch.withClient'@
+-- from the "Tripswitch" module instead.
 withClient :: ClientConfig -> (Client -> IO a) -> IO a
 withClient cfg = bracket (newClient cfg) closeClient
 
+-- | Allocate a new client. Does not start background threads.
+--
+-- For production use, prefer @Tripswitch.'Tripswitch.newClient'@ from the
+-- "Tripswitch" module, which starts SSE, flusher, and metadata sync threads
+-- and blocks until the initial SSE sync completes (5 s timeout).
 newClient :: ClientConfig -> IO Client
 newClient cfg = do
   states <- newTVarIO Map.empty
