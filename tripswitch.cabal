@@ -1,0 +1,103 @@
+cabal-version:   3.0
+name:            tripswitch
+version:         0.1.0.0
+synopsis:        Haskell SDK for TripSwitch circuit breaker management
+description:
+  Native Haskell SDK for TripSwitch, a circuit breaker management service.
+  Provides a clean ADT-based API (Layer 1), an effectful integration (Layer 2),
+  and an optional GADT state machine (Layer 3).
+
+license:         MIT
+license-file:    LICENSE
+author:          TripSwitch
+maintainer:      support@tripswitch.dev
+category:        Network, Control
+build-type:      Simple
+extra-doc-files: README.md
+
+common warnings
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+  default-extensions:
+    DerivingStrategies
+    ImportQualifiedPost
+    OverloadedStrings
+
+library
+  import:           warnings
+  hs-source-dirs:   src
+  default-language: GHC2021
+  exposed-modules:
+    Tripswitch
+    Tripswitch.Client
+    Tripswitch.Client.Internal
+    Tripswitch.Effect
+    Tripswitch.Effect.Interpreters
+    Tripswitch.Typed
+    Tripswitch.Admin
+    Tripswitch.Admin.Types
+    Tripswitch.Admin.Errors
+
+  build-depends:
+    , aeson                 >=2.1    && <2.3
+    , async                 >=2.2    && <2.3
+    , base                  >=4.17   && <5
+    , bytestring            >=0.11   && <0.13
+    , case-insensitive       >=1.2    && <1.3
+    , containers            >=0.6    && <0.8
+    , crypton               >=0.34   && <1.1
+    , effectful-core         >=2.3    && <2.7
+    , effectful-th           >=1.0    && <1.1
+    , http-client            >=0.7    && <0.8
+    , http-client-tls        >=0.3    && <0.4
+    , http-types             >=0.12   && <0.13
+    , memory                >=0.18   && <0.20
+    , random                >=1.2    && <1.3
+    , stm                   >=2.5    && <2.6
+    , text                  >=2.0    && <2.2
+    , time                  >=1.12   && <1.15
+    , unliftio-core          >=0.2    && <0.3
+    , unordered-containers  >=0.2    && <0.3
+    , zlib                  >=0.6    && <0.8
+
+test-suite tripswitch-test
+  import:           warnings
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Spec.hs
+  default-language: GHC2021
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+  other-modules:
+    Tripswitch.ClientSpec
+    Tripswitch.Client.InternalSpec
+    Tripswitch.EffectSpec
+    Tripswitch.TypedSpec
+    Tripswitch.AdminSpec
+    Tripswitch.PropertySpec
+    Tripswitch.IntegrationSpec
+
+  build-depends:
+    , base
+    , tripswitch
+    , aeson
+    , async
+    , bytestring
+    , containers
+    , hedgehog              >=1.2    && <1.6
+    , hspec                 >=2.10   && <2.12
+    , hspec-hedgehog        >=0.1    && <0.2
+    , http-types
+    , stm
+    , text
+    , time
+    , unordered-containers
+    , wai                   >=3.2    && <3.3
+    , warp                  >=3.3    && <3.5

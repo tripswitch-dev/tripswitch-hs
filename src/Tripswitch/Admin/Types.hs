@@ -1,0 +1,395 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
+
+-- |
+-- Module      : Tripswitch.Admin.Types
+-- Description : Admin API domain types and enums.
+module Tripswitch.Admin.Types
+  ( -- * Project
+    Project (..)
+
+    -- * Breaker
+  , Breaker (..)
+  , BreakerKind (..)
+  , BreakerOp (..)
+  , HalfOpenPolicy (..)
+
+    -- * Router
+  , Router (..)
+  , RouterMode (..)
+
+    -- * Breaker State
+  , AdminBreakerState (..)
+
+    -- * Notification
+  , NotificationChannel (..)
+  , NotificationChannelType (..)
+  , NotificationEventType (..)
+
+    -- * Event
+  , Event (..)
+
+    -- * Project Key
+  , ProjectKey (..)
+
+    -- * Pagination
+  , Pager (..)
+  , ListParams (..)
+  , defaultListParams
+  ) where
+
+import Data.Aeson
+  ( FromJSON (..)
+  , ToJSON (..)
+  , Value (..)
+  , object
+  , withObject
+  , withText
+  , (.:)
+  , (.:?)
+  , (.=)
+  )
+import Data.Int (Int64)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Text (Text)
+import qualified Data.Text as T
+
+-- ---------------------------------------------------------------------------
+-- Enums
+-- ---------------------------------------------------------------------------
+
+-- | Breaker kind — the aggregation method for the breaker.
+data BreakerKind
+  = ErrorRate
+  | Avg
+  | P95
+  | Max
+  | Min
+  | Sum
+  | StdDev
+  | Count
+  | Percentile
+  | ConsecutiveFailures
+  | Delta
+  deriving stock (Eq, Show)
+
+instance FromJSON BreakerKind where
+  parseJSON = withText "BreakerKind" $ \case
+    "error_rate" -> pure ErrorRate
+    "avg" -> pure Avg
+    "p95" -> pure P95
+    "max" -> pure Max
+    "min" -> pure Min
+    "sum" -> pure Sum
+    "stddev" -> pure StdDev
+    "count" -> pure Count
+    "percentile" -> pure Percentile
+    "consecutive_failures" -> pure ConsecutiveFailures
+    "delta" -> pure Delta
+    other -> fail $ "unknown BreakerKind: " <> T.unpack other
+
+instance ToJSON BreakerKind where
+  toJSON ErrorRate = String "error_rate"
+  toJSON Avg = String "avg"
+  toJSON P95 = String "p95"
+  toJSON Max = String "max"
+  toJSON Min = String "min"
+  toJSON Sum = String "sum"
+  toJSON StdDev = String "stddev"
+  toJSON Count = String "count"
+  toJSON Percentile = String "percentile"
+  toJSON ConsecutiveFailures = String "consecutive_failures"
+  toJSON Delta = String "delta"
+
+-- | Breaker comparison operator.
+data BreakerOp = OpGT | OpLT | OpGTE | OpLTE
+  deriving stock (Eq, Show)
+
+instance FromJSON BreakerOp where
+  parseJSON = withText "BreakerOp" $ \case
+    "gt" -> pure OpGT
+    "lt" -> pure OpLT
+    "gte" -> pure OpGTE
+    "lte" -> pure OpLTE
+    other -> fail $ "unknown BreakerOp: " <> T.unpack other
+
+instance ToJSON BreakerOp where
+  toJSON OpGT = String "gt"
+  toJSON OpLT = String "lt"
+  toJSON OpGTE = String "gte"
+  toJSON OpLTE = String "lte"
+
+-- | Half-open indeterminate policy (server-side concept).
+data HalfOpenPolicy = Optimistic | Conservative | Pessimistic
+  deriving stock (Eq, Show)
+
+instance FromJSON HalfOpenPolicy where
+  parseJSON = withText "HalfOpenPolicy" $ \case
+    "optimistic" -> pure Optimistic
+    "conservative" -> pure Conservative
+    "pessimistic" -> pure Pessimistic
+    other -> fail $ "unknown HalfOpenPolicy: " <> T.unpack other
+
+instance ToJSON HalfOpenPolicy where
+  toJSON Optimistic = String "optimistic"
+  toJSON Conservative = String "conservative"
+  toJSON Pessimistic = String "pessimistic"
+
+-- | Router mode.
+data RouterMode = Static | Canary | Weighted
+  deriving stock (Eq, Show)
+
+instance FromJSON RouterMode where
+  parseJSON = withText "RouterMode" $ \case
+    "static" -> pure Static
+    "canary" -> pure Canary
+    "weighted" -> pure Weighted
+    other -> fail $ "unknown RouterMode: " <> T.unpack other
+
+instance ToJSON RouterMode where
+  toJSON Static = String "static"
+  toJSON Canary = String "canary"
+  toJSON Weighted = String "weighted"
+
+-- | Notification channel type.
+data NotificationChannelType = Slack | PagerDuty | Email | Webhook
+  deriving stock (Eq, Show)
+
+instance FromJSON NotificationChannelType where
+  parseJSON = withText "NotificationChannelType" $ \case
+    "slack" -> pure Slack
+    "pagerduty" -> pure PagerDuty
+    "email" -> pure Email
+    "webhook" -> pure Webhook
+    other -> fail $ "unknown NotificationChannelType: " <> T.unpack other
+
+instance ToJSON NotificationChannelType where
+  toJSON Slack = String "slack"
+  toJSON PagerDuty = String "pagerduty"
+  toJSON Email = String "email"
+  toJSON Webhook = String "webhook"
+
+-- | Notification event type.
+data NotificationEventType = Trip | Recover
+  deriving stock (Eq, Show)
+
+instance FromJSON NotificationEventType where
+  parseJSON = withText "NotificationEventType" $ \case
+    "trip" -> pure Trip
+    "recover" -> pure Recover
+    other -> fail $ "unknown NotificationEventType: " <> T.unpack other
+
+instance ToJSON NotificationEventType where
+  toJSON Trip = String "trip"
+  toJSON Recover = String "recover"
+
+-- ---------------------------------------------------------------------------
+-- Domain Types
+-- ---------------------------------------------------------------------------
+
+-- | A TripSwitch project.
+data Project = Project
+  { projID :: !Text
+  , projName :: !Text
+  , projSlackWebhookURL :: !(Maybe Text)
+  , projTraceIDURLTemplate :: !(Maybe Text)
+  , projEnableSignedIngest :: !Bool
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Project where
+  parseJSON = withObject "Project" $ \v ->
+    Project
+      <$> v .: "id"
+      <*> v .: "name"
+      <*> v .:? "slack_webhook_url"
+      <*> v .:? "trace_id_url_template"
+      <*> v .: "enable_signed_ingest"
+
+-- | A circuit breaker definition.
+data Breaker = Breaker
+  { brkID :: !Text
+  , brkRouterID :: !Text
+  , brkName :: !Text
+  , brkMetric :: !Text
+  , brkKind :: !BreakerKind
+  , brkOp :: !BreakerOp
+  , brkThreshold :: !Double
+  , brkWindowMs :: !Int64
+  , brkMinCount :: !Int
+  , brkMinStateDurationMs :: !Int64
+  , brkCooldownMs :: !Int64
+  , brkEvalIntervalMs :: !Int64
+  , brkHalfOpenConfirmationMs :: !(Maybe Int64)
+  , brkHalfOpenBackoffEnabled :: !Bool
+  , brkHalfOpenBackoffCapMs :: !(Maybe Int64)
+  , brkHalfOpenIndeterminatePolicy :: !(Maybe HalfOpenPolicy)
+  , brkRecoveryWindowMs :: !(Maybe Int64)
+  , brkRecoveryAllowRateRampSteps :: !(Maybe Int)
+  , brkActions :: !(Maybe [Text])
+  , brkMetadata :: !(Map Text Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Breaker where
+  parseJSON = withObject "Breaker" $ \v ->
+    Breaker
+      <$> v .: "id"
+      <*> v .: "router_id"
+      <*> v .: "name"
+      <*> v .: "metric"
+      <*> v .: "kind"
+      <*> v .: "op"
+      <*> v .: "threshold"
+      <*> v .: "window_ms"
+      <*> v .: "min_count"
+      <*> v .: "min_state_duration_ms"
+      <*> v .: "cooldown_ms"
+      <*> v .: "eval_interval_ms"
+      <*> v .:? "half_open_confirmation_ms"
+      <*> v .: "half_open_backoff_enabled"
+      <*> v .:? "half_open_backoff_cap_ms"
+      <*> v .:? "half_open_indeterminate_policy"
+      <*> v .:? "recovery_window_ms"
+      <*> v .:? "recovery_allow_rate_ramp_steps"
+      <*> v .:? "actions"
+      <*> v .: "metadata"
+
+-- | A router.
+data Router = Router
+  { rtrID :: !Text
+  , rtrName :: !Text
+  , rtrMode :: !RouterMode
+  , rtrEnabled :: !Bool
+  , rtrBreakerCount :: !Int
+  , rtrBreakers :: !(Maybe [Breaker])
+  , rtrInsertedAt :: !(Maybe Text)
+  , rtrCreatedBy :: !(Maybe Text)
+  , rtrMetadata :: !(Map Text Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Router where
+  parseJSON = withObject "Router" $ \v ->
+    Router
+      <$> v .: "id"
+      <*> v .: "name"
+      <*> v .: "mode"
+      <*> v .: "enabled"
+      <*> v .: "breaker_count"
+      <*> v .:? "breakers"
+      <*> v .:? "inserted_at"
+      <*> v .:? "created_by"
+      <*> v .: "metadata"
+
+-- | Breaker state from the admin API.
+data AdminBreakerState = AdminBreakerState
+  { absBreakerID :: !Text
+  , absState :: !Text
+  , absAllowRate :: !Double
+  , absUpdatedAt :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON AdminBreakerState where
+  parseJSON = withObject "AdminBreakerState" $ \v ->
+    AdminBreakerState
+      <$> v .: "breaker_id"
+      <*> v .: "state"
+      <*> v .: "allow_rate"
+      <*> v .:? "updated_at"
+
+-- | A notification channel.
+data NotificationChannel = NotificationChannel
+  { ncID :: !Text
+  , ncProjectID :: !Text
+  , ncName :: !Text
+  , ncChannel :: !NotificationChannelType
+  , ncConfig :: !(Map Text Value)
+  , ncEvents :: ![NotificationEventType]
+  , ncEnabled :: !Bool
+  , ncCreatedAt :: !(Maybe Text)
+  , ncUpdatedAt :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON NotificationChannel where
+  parseJSON = withObject "NotificationChannel" $ \v ->
+    NotificationChannel
+      <$> v .: "id"
+      <*> v .: "project_id"
+      <*> v .: "name"
+      <*> v .: "channel"
+      <*> v .: "config"
+      <*> v .: "events"
+      <*> v .: "enabled"
+      <*> v .:? "created_at"
+      <*> v .:? "updated_at"
+
+-- | A breaker state change event.
+data Event = Event
+  { evID :: !Text
+  , evProjectID :: !Text
+  , evBreakerID :: !Text
+  , evFromState :: !Text
+  , evToState :: !Text
+  , evReason :: !(Maybe Text)
+  , evTimestamp :: !Text
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Event where
+  parseJSON = withObject "Event" $ \v ->
+    Event
+      <$> v .: "id"
+      <*> v .: "project_id"
+      <*> v .: "breaker_id"
+      <*> v .: "from_state"
+      <*> v .: "to_state"
+      <*> v .:? "reason"
+      <*> v .: "timestamp"
+
+-- | A project API key.
+data ProjectKey = ProjectKey
+  { pkID :: !Text
+  , pkName :: !Text
+  , pkKeyPrefix :: !Text
+  , pkLastUsedAt :: !(Maybe Text)
+  , pkInsertedAt :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ProjectKey where
+  parseJSON = withObject "ProjectKey" $ \v ->
+    ProjectKey
+      <$> v .: "id"
+      <*> v .: "name"
+      <*> v .: "key_prefix"
+      <*> v .:? "last_used_at"
+      <*> v .:? "inserted_at"
+
+-- ---------------------------------------------------------------------------
+-- Pagination
+-- ---------------------------------------------------------------------------
+
+-- | Parameters for list endpoints.
+data ListParams = ListParams
+  { lpCursor :: !(Maybe Text)
+  , lpLimit :: !(Maybe Int)
+  }
+  deriving stock (Eq, Show)
+
+-- | Default list parameters.
+defaultListParams :: ListParams
+defaultListParams = ListParams Nothing Nothing
+
+-- | Iterator for paginated list results.
+data Pager a = Pager
+  { pagerItems :: ![a]
+  , pagerCursor :: !(Maybe Text)
+  , pagerHasMore :: !Bool
+  }
+  deriving stock (Eq, Show)
