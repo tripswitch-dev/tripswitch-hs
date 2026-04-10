@@ -31,6 +31,20 @@ module Tripswitch.Admin
   , ListKeysResponse (..)
   , BatchBreakerStatesResponse (..)
 
+    -- * Workspaces
+  , Workspace (..)
+  , ListWorkspacesResponse (..)
+  , listWorkspaces
+  , createWorkspace
+  , getWorkspace
+  , updateWorkspace
+  , deleteWorkspace
+  , listWorkspacesWithConfig
+  , createWorkspaceWithConfig
+  , getWorkspaceWithConfig
+  , updateWorkspaceWithConfig
+  , deleteWorkspaceWithConfig
+
     -- * Projects
   , listProjects
   , createProject
@@ -638,3 +652,47 @@ updateRouterMetadata ac pid rid body = updateRouterMetadataWithConfig ac pid rid
 -- | Update router metadata with custom request config.
 updateRouterMetadataWithConfig :: AdminClient -> Text -> Text -> Value -> RequestConfig -> IO Value
 updateRouterMetadataWithConfig ac pid rid body rc = doRequest ac "PATCH" ("/v1/projects/" <> pid <> "/routers/" <> rid <> "/metadata") (Just body) rc
+
+-- ---------------------------------------------------------------------------
+-- Workspaces
+-- ---------------------------------------------------------------------------
+
+-- | List all workspaces for the authenticated org.
+listWorkspaces :: AdminClient -> IO ListWorkspacesResponse
+listWorkspaces ac = listWorkspacesWithConfig ac defaultRequestConfig
+
+-- | List workspaces with custom request config.
+listWorkspacesWithConfig :: AdminClient -> RequestConfig -> IO ListWorkspacesResponse
+listWorkspacesWithConfig ac rc = doRequest ac "GET" "/v1/workspaces" Nothing rc
+
+-- | Create a workspace.
+createWorkspace :: AdminClient -> Value -> IO Workspace
+createWorkspace ac body = createWorkspaceWithConfig ac body defaultRequestConfig
+
+-- | Create a workspace with custom request config.
+createWorkspaceWithConfig :: AdminClient -> Value -> RequestConfig -> IO Workspace
+createWorkspaceWithConfig ac body rc = doRequest ac "POST" "/v1/workspaces" (Just body) rc
+
+-- | Get a workspace by ID.
+getWorkspace :: AdminClient -> Text -> IO Workspace
+getWorkspace ac wid = getWorkspaceWithConfig ac wid defaultRequestConfig
+
+-- | Get a workspace by ID with custom request config.
+getWorkspaceWithConfig :: AdminClient -> Text -> RequestConfig -> IO Workspace
+getWorkspaceWithConfig ac wid rc = doRequest ac "GET" ("/v1/workspaces/" <> wid) Nothing rc
+
+-- | Update a workspace.
+updateWorkspace :: AdminClient -> Text -> Value -> IO Workspace
+updateWorkspace ac wid body = updateWorkspaceWithConfig ac wid body defaultRequestConfig
+
+-- | Update a workspace with custom request config.
+updateWorkspaceWithConfig :: AdminClient -> Text -> Value -> RequestConfig -> IO Workspace
+updateWorkspaceWithConfig ac wid body rc = doRequest ac "PATCH" ("/v1/workspaces/" <> wid) (Just body) rc
+
+-- | Delete a workspace.
+deleteWorkspace :: AdminClient -> Text -> IO ()
+deleteWorkspace ac wid = deleteWorkspaceWithConfig ac wid defaultRequestConfig
+
+-- | Delete a workspace with custom request config.
+deleteWorkspaceWithConfig :: AdminClient -> Text -> RequestConfig -> IO ()
+deleteWorkspaceWithConfig ac wid rc = doRequest_ ac "DELETE" ("/v1/workspaces/" <> wid) Nothing rc

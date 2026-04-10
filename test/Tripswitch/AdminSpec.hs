@@ -106,7 +106,7 @@ spec = do
     it "createBreaker returns a breaker" $ do
       let mockBreaker = object
             [ "id" .= ("brk_1" :: Text)
-            , "router_id" .= ("rtr_1" :: Text)
+            , "router_ids" .= (["rtr_1"] :: [Text])
             , "name" .= ("error-rate" :: Text)
             , "metric" .= ("errors" :: Text)
             , "kind" .= ("error_rate" :: Text)
