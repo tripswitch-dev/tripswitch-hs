@@ -106,7 +106,7 @@ spec = do
     it "createBreaker returns a breaker" $ do
       let mockBreaker = object
             [ "id" .= ("brk_1" :: Text)
-            , "router_id" .= ("rtr_1" :: Text)
+            , "router_ids" .= (["rtr_1"] :: [Text])
             , "name" .= ("error-rate" :: Text)
             , "metric" .= ("errors" :: Text)
             , "kind" .= ("error_rate" :: Text)
@@ -120,7 +120,8 @@ spec = do
             , "half_open_backoff_enabled" .= False
             , "metadata" .= object []
             ]
-      result <- withMockServer (jsonApp 200 mockBreaker) $ \ac ->
+      let envelope = object ["breaker" .= mockBreaker, "router_ids" .= (["rtr_1"] :: [Text])]
+      result <- withMockServer (jsonApp 200 envelope) $ \ac ->
         createBreaker ac "proj_1" (object ["name" .= ("error-rate" :: Text)])
       brkName result `shouldBe` "error-rate"
       brkKind result `shouldBe` ErrorRate

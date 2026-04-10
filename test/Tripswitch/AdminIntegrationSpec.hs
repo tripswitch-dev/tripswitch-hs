@@ -6,6 +6,7 @@ module Tripswitch.AdminIntegrationSpec (spec) where
 import Control.Exception (try)
 import Data.Aeson (object, (.=))
 import qualified Data.Text as T
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Environment (lookupEnv)
 import Test.Hspec
 
@@ -27,6 +28,7 @@ data TestEnv = TestEnv
   { teAdminKey :: !T.Text
   , teProjectID :: !T.Text
   , teBaseURL :: !T.Text
+  , teWorkspaceID :: !(Maybe T.Text)
   }
 
 loadEnv :: IO (Maybe TestEnv)
@@ -37,10 +39,12 @@ loadEnv = do
     Just key -> do
       mProjectID <- lookupEnv "TRIPSWITCH_PROJECT_ID"
       mBase <- lookupEnv "TRIPSWITCH_BASE_URL"
+      mWid <- lookupEnv "TRIPSWITCH_WORKSPACE_ID"
       pure $ Just TestEnv
         { teAdminKey = T.pack key
         , teProjectID = maybe "" T.pack mProjectID
         , teBaseURL = maybe "https://api.tripswitch.dev" T.pack mBase
+        , teWorkspaceID = fmap T.pack mWid
         }
 
 mkClient :: TestEnv -> IO AdminClient
@@ -164,3 +168,47 @@ spec = do
           case result of
             Left err -> isNotFound err `shouldBe` True
             Right _ -> expectationFailure "expected NotFound"
+
+        it "project CRUD lifecycle" $ do
+          ac <- mkClient env
+          ts <- getPOSIXTime
+          let projectName = "hs-integration-test-project-" <> T.pack (show (round ts :: Int))
+
+          -- Create
+          created <- createProject ac (object
+            [ "name" .= projectName
+            , "workspace_id" .= teWorkspaceID env
+            ])
+          projName created `shouldBe` projectName
+
+          -- List — should appear
+          resp <- listProjects ac
+          let ids = map projID (lprProjects resp)
+          ids `shouldSatisfy` elem (projID created)
+
+          -- Delete
+          deleteProject ac (projID created) (object ["name" .= projectName])
+
+          -- Verify deletion
+          result <- try $ getProject ac (projID created)
+          case result of
+            Left err -> isNotFound err `shouldBe` True
+            Right _ -> expectationFailure "expected NotFound after deletion"
+
+        it "getWorkspace returns workspace" $ do
+          case teWorkspaceID env of
+            Nothing -> pendingWith "TRIPSWITCH_WORKSPACE_ID not set"
+            Just wid -> do
+              ac <- mkClient env
+              ws <- getWorkspace ac wid
+              wsID ws `shouldBe` wid
+
+        it "invalid admin key returns Unauthorized" $ do
+          badClient <- newAdminClient defaultAdminConfig
+            { acAdminKey = "eb_admin_invalid"
+            , acBaseURL = teBaseURL env
+            }
+          result <- try $ getProject badClient "any"
+          case result of
+            Left err -> (isUnauthorized err || isForbidden err) `shouldBe` True
+            Right _ -> expectationFailure "expected Unauthorized or Forbidden"

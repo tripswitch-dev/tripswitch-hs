@@ -46,6 +46,10 @@ module Tripswitch.Admin.Types
   , ListKeysResponse (..)
   , BatchBreakerStatesResponse (..)
 
+    -- * Workspace
+  , Workspace (..)
+  , ListWorkspacesResponse (..)
+
     -- * Pagination
   , ListParams (..)
   , defaultListParams
@@ -221,14 +225,14 @@ instance FromJSON Project where
 -- | A circuit breaker definition.
 data Breaker = Breaker
   { brkID :: !Text
-  , brkRouterID :: !(Maybe Text)
+  , brkRouterIDs :: ![Text]
   , brkName :: !Text
   , brkMetric :: !Text
   , brkKind :: !BreakerKind
   , brkOp :: !BreakerOp
   , brkThreshold :: !Double
   , brkWindowMs :: !Int64
-  , brkMinCount :: !Int
+  , brkMinCount :: !(Maybe Int)
   , brkMinStateDurationMs :: !Int64
   , brkCooldownMs :: !Int64
   , brkEvalIntervalMs :: !Int64
@@ -248,14 +252,14 @@ instance FromJSON Breaker where
   parseJSON = withObject "Breaker" $ \v ->
     Breaker
       <$> v .: "id"
-      <*> v .:? "router_id"
+      <*> v .:? "router_ids" .!= []
       <*> v .: "name"
       <*> v .: "metric"
       <*> v .: "kind"
       <*> v .: "op"
       <*> v .: "threshold"
       <*> v .: "window_ms"
-      <*> v .: "min_count"
+      <*> v .:? "min_count"
       <*> v .: "min_state_duration_ms"
       <*> v .: "cooldown_ms"
       <*> v .: "eval_interval_ms"
@@ -406,6 +410,40 @@ instance FromJSON Status where
       <*> v .: "last_eval_ms"
 
 -- ---------------------------------------------------------------------------
+-- Workspaces
+-- ---------------------------------------------------------------------------
+
+-- | A Tripswitch workspace.
+data Workspace = Workspace
+  { wsID :: !Text
+  , wsName :: !Text
+  , wsSlug :: !Text
+  , wsOrgID :: !Text
+  , wsInsertedAt :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Workspace where
+  parseJSON = withObject "Workspace" $ \v ->
+    Workspace
+      <$> v .: "id"
+      <*> v .: "name"
+      <*> v .: "slug"
+      <*> v .: "org_id"
+      <*> v .:? "inserted_at"
+
+-- | Response from listing workspaces.
+data ListWorkspacesResponse = ListWorkspacesResponse
+  { lwrWorkspaces :: ![Workspace]
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON ListWorkspacesResponse where
+  parseJSON = withObject "ListWorkspacesResponse" $ \v ->
+    ListWorkspacesResponse
+      <$> v .: "workspaces"
+
+-- ---------------------------------------------------------------------------
 -- List Response Types
 -- ---------------------------------------------------------------------------
 
@@ -472,7 +510,7 @@ data ListChannelsResponse = ListChannelsResponse
 instance FromJSON ListChannelsResponse where
   parseJSON = withObject "ListChannelsResponse" $ \v ->
     ListChannelsResponse
-      <$> v .: "notification_channels"
+      <$> v .: "channels"
 
 -- | Response from listing project keys.
 data ListKeysResponse = ListKeysResponse
