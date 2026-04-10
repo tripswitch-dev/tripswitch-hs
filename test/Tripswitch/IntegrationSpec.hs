@@ -3,13 +3,15 @@
 
 module Tripswitch.IntegrationSpec (spec) where
 
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically, modifyTVar')
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import System.Environment (lookupEnv)
 import Test.Hspec
 
-import Tripswitch.Client
+import Tripswitch
+import Tripswitch.Client (cBreakerStates)
 
 spec :: Spec
 spec = do
@@ -25,6 +27,7 @@ spec = do
         let projectID = maybe "test-project" T.pack mProjectID
         mIngestSecret <- runIO $ lookupEnv "TRIPSWITCH_INGEST_SECRET"
         let ingestSecret = maybe "" T.pack mIngestSecret
+        mBaseURL <- runIO $ lookupEnv "TRIPSWITCH_BASE_URL"
 
         let liveCfg = defaultConfig
               { cfgProjectID = projectID
@@ -32,15 +35,19 @@ spec = do
               , cfgIngestSecret = ingestSecret
               , cfgLogger = nullLogger
               }
+            liveCfgWithBase = case mBaseURL of
+              Nothing -> liveCfg
+              Just url -> liveCfg { cfgBaseURL = T.pack url }
 
-        it "connects and receives initial breaker states via SSE" $ do
-          -- Uses the full Tripswitch.newClient (via withClient) which
-          -- starts background threads and blocks on SSE readiness.
-          -- If SSE connects, cSSEReady is signaled within 5s.
-          pendingWith "requires Tripswitch module import with thread spawning"
+        it "SSE connects and populates breaker states" $ do
+          withClient liveCfgWithBase $ \client -> do
+            -- Wait briefly for SSE to connect and populate states
+            threadDelay 3000000 -- 3s
+            stats <- getStats client
+            ssSSEConnected stats `shouldBe` True
 
         it "execute passthrough reports metrics" $ do
-          withClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
+          withClient liveCfgWithBase { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
             result <- execute client defaultExecConfig
               { ecRouterID = "integration-test"
               , ecMetrics = Map.singleton "latency" MetricLatency
@@ -48,13 +55,13 @@ spec = do
             result `shouldBe` Right 42
 
         it "getStats reflects breaker cache" $ do
-          withClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
+          withClient liveCfgWithBase { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
             atomically $ modifyTVar' (cBreakerStates client) (Map.insert "test-brk" Closed)
             stats <- getStats client
             ssCachedBreakers stats `shouldBe` 1
 
         it "getAllStates returns cached states" $ do
-          withClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
+          withClient liveCfgWithBase { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True } $ \client -> do
             atomically $ modifyTVar' (cBreakerStates client) (Map.insert "test-brk" Open)
             states <- getAllStates client
             case states of
@@ -62,6 +69,6 @@ spec = do
               _   -> expectationFailure $ "expected 1 state, got " <> show (length states)
 
         it "close is idempotent" $ do
-          client <- newClient liveCfg { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True }
+          client <- newClient liveCfgWithBase { cfgSSEDisabled = True, cfgFlusherDisabled = True, cfgMetaSyncDisabled = True }
           closeClient client
           closeClient client

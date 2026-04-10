@@ -81,6 +81,7 @@ test-suite tripswitch-test
     Tripswitch.EffectSpec
     Tripswitch.TypedSpec
     Tripswitch.AdminSpec
+    Tripswitch.AdminIntegrationSpec
     Tripswitch.PropertySpec
     Tripswitch.IntegrationSpec
 

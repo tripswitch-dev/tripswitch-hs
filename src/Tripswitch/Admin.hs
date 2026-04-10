@@ -20,8 +20,16 @@ module Tripswitch.Admin
 
     -- * Pagination
   , ListParams (..)
-  , Pager (..)
   , defaultListParams
+
+    -- * List Responses
+  , ListProjectsResponse (..)
+  , ListBreakersResponse (..)
+  , ListRoutersResponse (..)
+  , ListEventsResponse (..)
+  , ListChannelsResponse (..)
+  , ListKeysResponse (..)
+  , BatchBreakerStatesResponse (..)
 
     -- * Projects
   , listProjects
@@ -308,15 +316,15 @@ appendListParams path lp =
 -- ---------------------------------------------------------------------------
 
 -- | List all projects (first page).
-listProjects :: AdminClient -> IO (Pager Project)
+listProjects :: AdminClient -> IO ListProjectsResponse
 listProjects ac = listProjectsWithParams ac defaultListParams
 
 -- | List projects with pagination params.
-listProjectsWithParams :: AdminClient -> ListParams -> IO (Pager Project)
+listProjectsWithParams :: AdminClient -> ListParams -> IO ListProjectsResponse
 listProjectsWithParams ac lp = listProjectsWithConfig ac lp defaultRequestConfig
 
 -- | List projects with pagination params and custom request config.
-listProjectsWithConfig :: AdminClient -> ListParams -> RequestConfig -> IO (Pager Project)
+listProjectsWithConfig :: AdminClient -> ListParams -> RequestConfig -> IO ListProjectsResponse
 listProjectsWithConfig ac lp rc = doRequest ac "GET" (appendListParams "/v1/projects" lp) Nothing rc
 
 -- | Create a project.
@@ -364,15 +372,15 @@ rotateIngestSecretWithConfig ac pid rc = doRequest ac "POST" ("/v1/projects/" <>
 -- ---------------------------------------------------------------------------
 
 -- | List breakers for a project (first page).
-listBreakers :: AdminClient -> Text -> IO (Pager Breaker)
+listBreakers :: AdminClient -> Text -> IO ListBreakersResponse
 listBreakers ac pid = listBreakersWithParams ac pid defaultListParams
 
 -- | List breakers with pagination params.
-listBreakersWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Breaker)
+listBreakersWithParams :: AdminClient -> Text -> ListParams -> IO ListBreakersResponse
 listBreakersWithParams ac pid lp = listBreakersWithConfig ac pid lp defaultRequestConfig
 
 -- | List breakers with pagination params and custom request config.
-listBreakersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Breaker)
+listBreakersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListBreakersResponse
 listBreakersWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/breakers") lp) Nothing rc
 
 -- | Create a breaker.
@@ -424,11 +432,11 @@ getBreakerStateWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO 
 getBreakerStateWithConfig ac pid bid rc = doRequest ac "GET" ("/v1/projects/" <> pid <> "/breakers/" <> bid <> "/state") Nothing rc
 
 -- | Batch get breaker states.
-batchGetBreakerStates :: AdminClient -> Text -> Value -> IO [AdminBreakerState]
+batchGetBreakerStates :: AdminClient -> Text -> Value -> IO BatchBreakerStatesResponse
 batchGetBreakerStates ac pid body = batchGetBreakerStatesWithConfig ac pid body defaultRequestConfig
 
 -- | Batch get breaker states with custom request config.
-batchGetBreakerStatesWithConfig :: AdminClient -> Text -> Value -> RequestConfig -> IO [AdminBreakerState]
+batchGetBreakerStatesWithConfig :: AdminClient -> Text -> Value -> RequestConfig -> IO BatchBreakerStatesResponse
 batchGetBreakerStatesWithConfig ac pid body rc = doRequest ac "POST" ("/v1/projects/" <> pid <> "/breakers/state:batch") (Just body) rc
 
 -- ---------------------------------------------------------------------------
@@ -436,15 +444,15 @@ batchGetBreakerStatesWithConfig ac pid body rc = doRequest ac "POST" ("/v1/proje
 -- ---------------------------------------------------------------------------
 
 -- | List routers for a project (first page).
-listRouters :: AdminClient -> Text -> IO (Pager Router)
+listRouters :: AdminClient -> Text -> IO ListRoutersResponse
 listRouters ac pid = listRoutersWithParams ac pid defaultListParams
 
 -- | List routers with pagination params.
-listRoutersWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Router)
+listRoutersWithParams :: AdminClient -> Text -> ListParams -> IO ListRoutersResponse
 listRoutersWithParams ac pid lp = listRoutersWithConfig ac pid lp defaultRequestConfig
 
 -- | List routers with pagination params and custom request config.
-listRoutersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Router)
+listRoutersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListRoutersResponse
 listRoutersWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/routers") lp) Nothing rc
 
 -- | Create a router.
@@ -500,15 +508,15 @@ unlinkBreakerWithConfig ac pid rid bid rc = doRequest_ ac "DELETE" ("/v1/project
 -- ---------------------------------------------------------------------------
 
 -- | List notification channels (first page).
-listNotificationChannels :: AdminClient -> Text -> IO (Pager NotificationChannel)
+listNotificationChannels :: AdminClient -> Text -> IO ListChannelsResponse
 listNotificationChannels ac pid = listNotificationChannelsWithParams ac pid defaultListParams
 
 -- | List notification channels with pagination params.
-listNotificationChannelsWithParams :: AdminClient -> Text -> ListParams -> IO (Pager NotificationChannel)
+listNotificationChannelsWithParams :: AdminClient -> Text -> ListParams -> IO ListChannelsResponse
 listNotificationChannelsWithParams ac pid lp = listNotificationChannelsWithConfig ac pid lp defaultRequestConfig
 
 -- | List notification channels with pagination params and custom request config.
-listNotificationChannelsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager NotificationChannel)
+listNotificationChannelsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListChannelsResponse
 listNotificationChannelsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/notification-channels") lp) Nothing rc
 
 -- | Create a notification channel.
@@ -556,15 +564,15 @@ testNotificationChannelWithConfig ac pid cid rc = doRequest_ ac "POST" ("/v1/pro
 -- ---------------------------------------------------------------------------
 
 -- | List events for a project (first page).
-listEvents :: AdminClient -> Text -> IO (Pager Event)
+listEvents :: AdminClient -> Text -> IO ListEventsResponse
 listEvents ac pid = listEventsWithParams ac pid defaultListParams
 
 -- | List events with pagination params.
-listEventsWithParams :: AdminClient -> Text -> ListParams -> IO (Pager Event)
+listEventsWithParams :: AdminClient -> Text -> ListParams -> IO ListEventsResponse
 listEventsWithParams ac pid lp = listEventsWithConfig ac pid lp defaultRequestConfig
 
 -- | List events with pagination params and custom request config.
-listEventsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager Event)
+listEventsWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListEventsResponse
 listEventsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/events") lp) Nothing rc
 
 -- ---------------------------------------------------------------------------
@@ -572,15 +580,15 @@ listEventsWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/p
 -- ---------------------------------------------------------------------------
 
 -- | List project keys (first page).
-listProjectKeys :: AdminClient -> Text -> IO (Pager ProjectKey)
+listProjectKeys :: AdminClient -> Text -> IO ListKeysResponse
 listProjectKeys ac pid = listProjectKeysWithParams ac pid defaultListParams
 
 -- | List project keys with pagination params.
-listProjectKeysWithParams :: AdminClient -> Text -> ListParams -> IO (Pager ProjectKey)
+listProjectKeysWithParams :: AdminClient -> Text -> ListParams -> IO ListKeysResponse
 listProjectKeysWithParams ac pid lp = listProjectKeysWithConfig ac pid lp defaultRequestConfig
 
 -- | List project keys with pagination params and custom request config.
-listProjectKeysWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO (Pager ProjectKey)
+listProjectKeysWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListKeysResponse
 listProjectKeysWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/keys") lp) Nothing rc
 
 -- | Create a project key.
