@@ -658,6 +658,9 @@ updateRouterMetadataWithConfig ac pid rid body rc = doRequest ac "PATCH" ("/v1/p
 -- ---------------------------------------------------------------------------
 
 -- | List all workspaces for the authenticated org.
+-- Note: the @\/v1\/workspaces@ endpoint returns all workspaces in a single
+-- response without cursor-based pagination, so no @WithParams@ variant is
+-- provided.
 listWorkspaces :: AdminClient -> IO ListWorkspacesResponse
 listWorkspaces ac = listWorkspacesWithConfig ac defaultRequestConfig
 
