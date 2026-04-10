@@ -232,7 +232,7 @@ data Breaker = Breaker
   , brkOp :: !BreakerOp
   , brkThreshold :: !Double
   , brkWindowMs :: !Int64
-  , brkMinCount :: !Int
+  , brkMinCount :: !(Maybe Int)
   , brkMinStateDurationMs :: !Int64
   , brkCooldownMs :: !Int64
   , brkEvalIntervalMs :: !Int64
@@ -259,7 +259,7 @@ instance FromJSON Breaker where
       <*> v .: "op"
       <*> v .: "threshold"
       <*> v .: "window_ms"
-      <*> v .: "min_count"
+      <*> v .:? "min_count"
       <*> v .: "min_state_duration_ms"
       <*> v .: "cooldown_ms"
       <*> v .: "eval_interval_ms"
@@ -510,7 +510,7 @@ data ListChannelsResponse = ListChannelsResponse
 instance FromJSON ListChannelsResponse where
   parseJSON = withObject "ListChannelsResponse" $ \v ->
     ListChannelsResponse
-      <$> v .: "notification_channels"
+      <$> v .: "channels"
 
 -- | Response from listing project keys.
 data ListKeysResponse = ListKeysResponse

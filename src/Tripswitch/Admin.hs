@@ -142,7 +142,7 @@ module Tripswitch.Admin
 
 import qualified Data.CaseInsensitive as CI
 import Control.Exception (SomeException, throwIO, try)
-import Data.Aeson (FromJSON (..), Value, eitherDecode, encode)
+import Data.Aeson (FromJSON (..), Value, eitherDecode, encode, withObject, (.:), (.:?), (.!=))
 import Data.Aeson qualified as Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
@@ -397,13 +397,27 @@ listBreakersWithParams ac pid lp = listBreakersWithConfig ac pid lp defaultReque
 listBreakersWithConfig :: AdminClient -> Text -> ListParams -> RequestConfig -> IO ListBreakersResponse
 listBreakersWithConfig ac pid lp rc = doRequest ac "GET" (appendListParams ("/v1/projects/" <> pid <> "/breakers") lp) Nothing rc
 
+-- Internal envelope for single-breaker API responses.
+data BreakerEnvelope = BreakerEnvelope !Breaker ![Text]
+
+instance FromJSON BreakerEnvelope where
+  parseJSON = withObject "BreakerEnvelope" $ \v ->
+    BreakerEnvelope
+      <$> v .: "breaker"
+      <*> v .:? "router_ids" .!= []
+
+unwrapBreakerEnv :: BreakerEnvelope -> Breaker
+unwrapBreakerEnv (BreakerEnvelope b rids)
+  | null rids = b
+  | otherwise = b { brkRouterIDs = rids }
+
 -- | Create a breaker.
 createBreaker :: AdminClient -> Text -> Value -> IO Breaker
 createBreaker ac pid body = createBreakerWithConfig ac pid body defaultRequestConfig
 
 -- | Create a breaker with custom request config.
 createBreakerWithConfig :: AdminClient -> Text -> Value -> RequestConfig -> IO Breaker
-createBreakerWithConfig ac pid body rc = doRequest ac "POST" ("/v1/projects/" <> pid <> "/breakers") (Just body) rc
+createBreakerWithConfig ac pid body rc = unwrapBreakerEnv <$> doRequest ac "POST" ("/v1/projects/" <> pid <> "/breakers") (Just body) rc
 
 -- | Get a breaker by ID.
 getBreaker :: AdminClient -> Text -> Text -> IO Breaker
@@ -411,7 +425,7 @@ getBreaker ac pid bid = getBreakerWithConfig ac pid bid defaultRequestConfig
 
 -- | Get a breaker by ID with custom request config.
 getBreakerWithConfig :: AdminClient -> Text -> Text -> RequestConfig -> IO Breaker
-getBreakerWithConfig ac pid bid rc = doRequest ac "GET" ("/v1/projects/" <> pid <> "/breakers/" <> bid) Nothing rc
+getBreakerWithConfig ac pid bid rc = unwrapBreakerEnv <$> doRequest ac "GET" ("/v1/projects/" <> pid <> "/breakers/" <> bid) Nothing rc
 
 -- | Update a breaker.
 updateBreaker :: AdminClient -> Text -> Text -> Value -> IO Breaker
@@ -419,7 +433,7 @@ updateBreaker ac pid bid body = updateBreakerWithConfig ac pid bid body defaultR
 
 -- | Update a breaker with custom request config.
 updateBreakerWithConfig :: AdminClient -> Text -> Text -> Value -> RequestConfig -> IO Breaker
-updateBreakerWithConfig ac pid bid body rc = doRequest ac "PATCH" ("/v1/projects/" <> pid <> "/breakers/" <> bid) (Just body) rc
+updateBreakerWithConfig ac pid bid body rc = unwrapBreakerEnv <$> doRequest ac "PATCH" ("/v1/projects/" <> pid <> "/breakers/" <> bid) (Just body) rc
 
 -- | Delete a breaker.
 deleteBreaker :: AdminClient -> Text -> Text -> IO ()
